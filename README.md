@@ -56,7 +56,6 @@ scripts/
   scoring/                    reported SCS
   analysis/                   mean ± SD over runs, case-bootstrap CIs, ICD-chapter, item-level and audit analyses
 notebooks/                  persona / patient-factor / ICD-chapter stratification and session-outcome analysis
-results/main/               aggregate outputs behind the paper's tables (no patient-level text)
 ```
 
 ## Setup
@@ -99,17 +98,17 @@ The run scripts start the vLLM servers themselves and assume one node with up to
 
 To evaluate a new educator, add its served name and Hugging Face id to `EDUCATOR_HF` in `scripts/run/common.sh` (an empty id routes it to the OpenAI API), then run steps 1–3.
 
-## Results in this repository
+## Where each result comes from
 
 | Result | Script | Output |
 |---|---|---|
-| Main results: 5-run mean ± SD per educator | `scripts/analysis/aggregate_variance_results.py` | `results/main/variance_summary.csv` |
-| Case-bootstrap 95% CIs (B = 10,000) | `scripts/analysis/bootstrap_case_ci.py` | `results/main/case_bootstrap_ci.csv` |
-| ICD-chapter stratification | `scripts/analysis/icd_chapter_analysis.py` | `results/main/icd_chapter_table.csv` |
-| Persona, patient-factor and ICD-chapter stratification | `notebooks/stratified_analysis.ipynb` | figures |
-| Session-outcome analysis | `notebooks/failure_analysis.ipynb` | figures |
-| Completed-session audit | `scripts/analysis/complete_case_audit.py` | `results/main/clean_complete_audit.csv` |
-| Item-level breakdown | `scripts/analysis/item_level_analysis.py` | `results/main/item_analysis/` |
+| Main results: 5-run mean ± SD per educator | `scripts/analysis/aggregate_variance_results.py` | `data/processed/output/variance_summary.csv` |
+| Case-bootstrap 95% CIs (B = 10,000) | `scripts/analysis/bootstrap_case_ci.py` | `data/processed/output/case_bootstrap_ci.csv` |
+| ICD-chapter stratification | `scripts/analysis/icd_chapter_analysis.py` | `outputs/icd_chapter_table.csv` |
+| Persona, patient-factor and ICD-chapter stratification | `notebooks/stratified_analysis.ipynb` | `figures/` |
+| Session-outcome analysis | `notebooks/failure_analysis.ipynb` | `figures/` |
+| Completed-session audit | `scripts/analysis/complete_case_audit.py` | `outputs/clean_complete_audit.csv` |
+| Item-level breakdown | `scripts/analysis/item_level_analysis.py` | `outputs/item_analysis/` |
 
 ### Reproducibility notes
 
