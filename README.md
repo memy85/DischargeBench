@@ -42,7 +42,7 @@ This repository contains the simulation harness, every prompt, the evaluation co
 ## Repository layout
 
 ```
-config/config.yaml          model names, ports, dataset file, evaluation settings
+config/config.yaml          every setting: models, vLLM servers, prompts, simulation and evaluation hyperparameters
 src/                        simulation harness
   virtual_patient.py          Virtual Patient
   educator_agent.py           Educator under test
@@ -69,7 +69,22 @@ pip install -r requirements.txt
 pip install vllm==0.19.0     # GPU hosts only
 ```
 
-Educators evaluated in the paper: GPT-5.5, GPT-5.4-mini, GPT-5.4-nano (API); Qwen3-32B, Qwen3-4B, MedGemma-27B-text-it, MedGemma-4B-it, Llama-3.3-70B-Instruct (vLLM). Hugging Face ids and served names are in `scripts/run/common.sh`.
+Educators evaluated in the paper: GPT-5.5, GPT-5.4-mini, GPT-5.4-nano (API); Qwen3-32B, Qwen3-4B, MedGemma-27B-text-it, MedGemma-4B-it, Llama-3.3-70B-Instruct (vLLM). Their Hugging Face ids and served names are in `config/config.yaml`.
+
+## Configuration
+
+All settings live in `config/config.yaml`:
+
+| Section | What it sets |
+|---|---|
+| `educators`, `runs` | educators under test (served name, Hugging Face id or OpenAI API, display name) and the run tags |
+| `servers` | Hugging Face ids, ports, vLLM arguments and GPU assignments for the Virtual Patient, Simulation Orchestrator, educator and judge |
+| `prompts` | the template file under `prompts/` for every role and judge |
+| `discharge_bench` | simulation: case file, `max_turns`, parallel workers, patient-turn retries, `min_turns_before_complete`, opening message |
+| `evaluation` | judge model, temperature, concurrency, output-token caps, SCS settings |
+| `analysis` | table/figure order, bootstrap sizes and seeds, audit thresholds |
+
+The Python entry points use [Hydra](https://hydra.cc), so `discharge_bench.*` and `evaluation.*` keys can be overridden on the command line, e.g. `python src/discharge_bench.py discharge_bench.simulation.max_turns=60`. The run scripts read `servers`, `educators` and `runs` through `scripts/run/config.py`.
 
 ## Data
 
@@ -85,7 +100,7 @@ Outputs go to `data/processed/output/<educator>__run<r>/`, one directory per edu
 
 ```bash
 # 1. Simulation (GPU): 5 runs of one educator over the 320 cases
-bash scripts/run/01_simulate.sh Qwen3-32B          # any educator listed in scripts/run/common.sh
+bash scripts/run/01_simulate.sh Qwen3-32B          # any educator listed under educators in config/config.yaml
 
 # 2. Evaluation (GPU): Conversation Quality, TCS, SCS and CLSA for each run
 bash scripts/run/02_evaluate.sh Qwen3-32B
@@ -94,9 +109,9 @@ bash scripts/run/02_evaluate.sh Qwen3-32B
 bash scripts/run/03_analyze.sh
 ```
 
-The run scripts start the vLLM servers themselves and assume one node with up to five A100-80GB GPUs; edit the `CUDA_VISIBLE_DEVICES` assignments or wrap them in a scheduler job as needed. Every stage is resumable: cases already present in an output file are skipped.
+The run scripts start the vLLM servers themselves and assume one node with up to five A100-80GB GPUs; change `servers.gpus` in the config or wrap the scripts in a scheduler job as needed. Every stage is resumable: cases already present in an output file are skipped.
 
-To evaluate a new educator, add its served name and Hugging Face id to `EDUCATOR_HF` in `scripts/run/common.sh` (an empty id routes it to the OpenAI API), then run steps 1–3.
+To evaluate a new educator, add it under `educators` in `config/config.yaml` (`hf_id: null` routes it to the OpenAI API) and to `analysis.display_order`, then run steps 1–3.
 
 ## Where each result comes from
 
