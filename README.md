@@ -12,7 +12,7 @@ This repository contains the simulation harness, every prompt, the evaluation co
 
 ## How it works
 
-<p align="center"><img src="assets/fig_overview.png" alt="DischargeBench overview: Stage I simulates the dialogue between the Educator and the Virtual Patient under the Simulation Orchestrator; Stage II scores it with an LLM judge on Conversation Quality, TCS, SCS and CLSA." width="640"></p>
+<p align="center"><img src="assets/fig_overview.png" alt="DischargeBench overview: Stage I simulates the dialogue between the Educator and the Virtual Patient under the Simulation Orchestrator; Stage II scores it with an LLM judge on Conversation Quality, TCS, SCS and CLSA." width="440"></p>
 
 - **Virtual Patient:** `meta-llama/Llama-3.3-70B-Instruct`. Five personalities (neutral, anxious, distrustful, high conscientiousness, minimizer), three education levels (elementary, high school, college), two health-literacy levels (low, high) and three levels of past-medical-history recall (poor, partial, accurate).
 - **Simulation Orchestrator:** `Qwen/Qwen3.5-9B`, thinking disabled (implemented in `src/environment_agent.py`). It checks each patient turn, corrects out-of-character turns, and decides when the session is complete.
