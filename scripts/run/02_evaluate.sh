@@ -18,8 +18,7 @@ wait_for_server $JUDGE_PORT "judge"; wait_for_server $VP_PORT "patient"
 
 for RUN in "${RUNS[@]}"; do
     ARGS=("evaluation.models=['${MODEL}__${RUN}']" "evaluation.eval_model=gemma-4-31B-it"
-          "evaluation.decompose_model=gemma-4-31B-it" "evaluation.eval_port=$JUDGE_PORT"
-          "evaluation.concurrency=16")
+          "evaluation.eval_port=$JUDGE_PORT" "evaluation.concurrency=16")
     python "$EVAL/topic_checklist_raw_score.py"        "${ARGS[@]}"   # TCS judgments
     python "$EVAL/conversation_quality.py"             "${ARGS[@]}"   # CQ (appendix)
     python "$EVAL/safety_commission_raw_score.py"      "${ARGS[@]}"   # CLSA claims + verdicts

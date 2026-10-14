@@ -32,25 +32,14 @@ The two axes must not collapse into each other. See the 2x3 grid in
 safety_commission_calculate_score.py: `neutral` + `appropriate` is **ungrounded but
 plausible action** — correct advice the note happened to omit — and is NOT a defect.
 
-LLM-as-a-Jury
--------------
-The JUDGE pass is juried; the DECOMPOSE pass is not (voting on a free-form claim list is
-ill-defined). So decomposition runs ONCE and is cached per educator model at
-`safety_commission_claims.jsonl`; every juror then judges that shared list, which is what
-lets the calculate stage align claims by index and majority-vote each axis.
+Decomposition runs once and is cached per educator model at
+`safety_commission_claims.jsonl`; a rerun of the judge pass reuses the cached claims.
 
-  * The first juror served populates the claim cache (it is the panel's decomposer). Set
-    `evaluation.decompose_model` to name that juror explicitly; a later juror that finds
-    no cache and is NOT the decomposer fails loudly rather than re-decomposing under a
-    different model (which would desynchronise the claim lists).
-  * The judge pass writes a juror-tagged file: `safety_commission_raw__<eval_model>.jsonl`.
-    Single-judge behaviour is just a one-element panel.
-
-Output: data/processed/output/{model}/safety_commission_claims.jsonl   (shared, once)
-        data/processed/output/{model}/safety_commission_raw__{juror}.jsonl
+Output: data/processed/output/{model}/safety_commission_claims.jsonl
+        data/processed/output/{model}/safety_commission_raw__{eval_model}.jsonl
 
 Usage:
-    # one juror (served on eval_port); repeat per juror in the SBATCH loop
+    # judge served on eval_port
     python src/evaluation/safety_commission_raw_score.py \
         "evaluation.eval_model=gemma-4-31B-it" "evaluation.eval_port=5002"
 """
@@ -74,7 +63,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from utils import PROJECT_PATH
 
 sys.path.insert(0, str(Path(__file__).parent))
-import jury
+import judge
 
 PROMPTS_PATH = PROJECT_PATH / "prompts"
 OUTPUT_ROOT  = PROJECT_PATH / "data/processed/output"
@@ -88,7 +77,7 @@ RAW_STEM    = "safety_commission_raw"
 # output budget truncated that JSON mid-string on the largest/most-verbose cases ->
 # pydantic "EOF while parsing a string" and a hard job failure (no silent drop). Cap
 # generously: the worst prompt (~8.4k-token note + ~100 claims ~= 12k) + this budget
-# still fits the 32k-context jurors (Qwen3-32B, Llama-3.3-70B), and 16k >> the ~4k
+# still fits a 32k context, and 16k >> the ~4k
 # real max output, so verdicts can never truncate.
 MAX_OUTPUT_TOKENS = 16384
 
@@ -129,29 +118,29 @@ def format_conversation(conversation: list[dict]) -> str:
     return "\n".join(f"{t['role'].capitalize()}: {t['message']}" for t in conversation)
 
 
-async def _parse(client, model, api_style, prompt, schema, temperature):
-    return await jury.structured_call(
-        client, model, api_style, prompt, schema,
+async def _parse(client, model, prompt, schema, temperature):
+    return await judge.structured_call(
+        client, model, prompt, schema,
         temperature=temperature, max_output_tokens=MAX_OUTPUT_TOKENS,
     )
 
 
 # ---------------------------------------------------------------------------
-# Decompose (once, cached) — the claim set every juror shares
+# Decompose (once, cached)
 # ---------------------------------------------------------------------------
 
-async def decompose_one(sem, record, templates, client, model, api_style, temperature):
+async def decompose_one(sem, record, templates, client, model, temperature):
     async with sem:
         decomposed = await _parse(
-            client, model, api_style,
+            client, model,
             templates["decompose"].render(
                 conversation_history=format_conversation(record["conversation"])),
             Claims, temperature,
         )
     if decomposed is None:
         raise RuntimeError(
-            f"Decomposer '{model}' returned schema-invalid output for note "
-            f"{record['note_id']} after retries — cannot build the shared claim cache."
+            f"Judge '{model}' returned schema-invalid claims for note "
+            f"{record['note_id']} after retries — cannot build the claim cache."
         )
     return {
         "note_id":          record["note_id"],
@@ -169,10 +158,10 @@ def load_claim_cache(model: str) -> dict[str, dict] | None:
     return {r["note_id"]: r for r in recs}
 
 
-async def build_claim_cache(model, records, templates, client, decomposer, api_style, sem, temperature):
-    print(f"[{model}] Decomposing {len(records)} cases under '{decomposer}' (cache miss)...")
+async def build_claim_cache(model, records, templates, client, eval_model, sem, temperature):
+    print(f"[{model}] Decomposing {len(records)} cases under '{eval_model}' (cache miss)...")
     cache = await asyncio.gather(*[
-        decompose_one(sem, r, templates, client, decomposer, api_style, temperature) for r in records
+        decompose_one(sem, r, templates, client, eval_model, temperature) for r in records
     ])
     out = OUTPUT_ROOT / model / f"{CLAIMS_STEM}.jsonl"
     pd.DataFrame(cache).to_json(out, lines=True, orient="records")
@@ -181,10 +170,10 @@ async def build_claim_cache(model, records, templates, client, decomposer, api_s
 
 
 # ---------------------------------------------------------------------------
-# Judge (per juror) — the juried pass
+# Judge
 # ---------------------------------------------------------------------------
 
-async def judge_one(sem, cache_rec, note_text, templates, client, juror, api_style, temperature):
+async def judge_one(sem, cache_rec, note_text, templates, client, eval_model, temperature):
     claims = cache_rec["claims"]
     if not claims:
         return {"note_id": cache_rec["note_id"],
@@ -192,28 +181,27 @@ async def judge_one(sem, cache_rec, note_text, templates, client, juror, api_sty
                 "session_complete":  cache_rec.get("session_complete"),
                 "claims": []}
     judge_prompt = templates["judge"].render(claims=claims, note_text=note_text)
-    # Jurors occasionally return an incomplete verdict list (drop claim indices). Retry
-    # with a temperature bump to break the determinism that causes it; abstain if still
-    # incomplete. Attempt 0 keeps the configured temperature so the common path matches
-    # the other jurors.
+    # The judge occasionally returns an incomplete verdict list (drops claim indices).
+    # Retry with a temperature bump to break the determinism that causes it; abstain if
+    # still incomplete. Attempt 0 keeps the configured temperature.
     judged = None
     for attempt in range(4):
         t = temperature if attempt == 0 else 0.6
         async with sem:
-            judged_raw = await _parse(client, juror, api_style, judge_prompt, Judgments, t)
+            judged_raw = await _parse(client, eval_model, judge_prompt, Judgments, t)
         if judged_raw is None:
-            print(f"  [RETRY] juror '{juror}' schema-invalid verdicts on {cache_rec['note_id']}, "
+            print(f"  [RETRY] judge '{eval_model}' schema-invalid verdicts on {cache_rec['note_id']}, "
                   f"attempt {attempt + 1}/4")
             continue
         judged = {j.index: j for j in judged_raw.judgments}
         missing = set(range(len(claims))) - set(judged)
         if not missing:
             break
-        print(f"  [RETRY] juror '{juror}' incomplete verdicts on {cache_rec['note_id']} "
+        print(f"  [RETRY] judge '{eval_model}' incomplete verdicts on {cache_rec['note_id']} "
               f"(missing {sorted(missing)} of {len(claims)}), attempt {attempt + 1}/4")
     else:
-        print(f"  [ABSTAIN] juror '{juror}' still-incomplete verdicts on {cache_rec['note_id']} "
-              f"after 4 tries — skipping this juror's vote for this case.")
+        print(f"  [ABSTAIN] judge '{eval_model}' still-incomplete verdicts on {cache_rec['note_id']} "
+              f"after 4 tries — skipping this case.")
         return None
     out = []
     for i, c in enumerate(claims):
@@ -233,7 +221,7 @@ async def judge_one(sem, cache_rec, note_text, templates, client, juror, api_sty
     }
 
 
-async def evaluate_model(model, notes, templates, client, juror, api_style, decomposer,
+async def evaluate_model(model, notes, templates, client, eval_model,
                          concurrency, temperature, limit=None):
     print(f"\n[{model}] Loading records...")
     records = [r for r in load_records(model) if r["note_id"] in notes]
@@ -245,26 +233,20 @@ async def evaluate_model(model, notes, templates, client, juror, api_style, deco
 
     cache = load_claim_cache(model)
     if cache is None:
-        if str(juror) != str(decomposer):
-            raise RuntimeError(
-                f"[{model}] No cached claims and juror '{juror}' is not the decomposer "
-                f"'{decomposer}'. Serve the decomposer first so it populates "
-                f"{CLAIMS_STEM}.jsonl, then run the other jurors."
-            )
-        cache = await build_claim_cache(model, records, templates, client, decomposer,
-                                        api_style, sem, temperature)
+        cache = await build_claim_cache(model, records, templates, client, eval_model,
+                                        sem, temperature)
     else:
         print(f"[{model}] Reusing cached claims ({len(cache)} cases).")
 
     # judge only the cases we have claims for (intersect with requested records)
     to_judge = [cache[r["note_id"]] for r in records if r["note_id"] in cache]
-    print(f"[{model}] Juror '{juror}' judging {len(to_judge)} cases...")
+    print(f"[{model}] Judge '{eval_model}' judging {len(to_judge)} cases...")
     results = [r for r in await asyncio.gather(*[
-        judge_one(sem, cr, notes[cr["note_id"]], templates, client, juror, api_style, temperature)
+        judge_one(sem, cr, notes[cr["note_id"]], templates, client, eval_model, temperature)
         for cr in to_judge
     ]) if r is not None]
     abstained = len(to_judge) - len(results)
-    out = OUTPUT_ROOT / model / f"{RAW_STEM}__{juror}.jsonl"
+    out = OUTPUT_ROOT / model / f"{RAW_STEM}__{eval_model}.jsonl"
     pd.DataFrame(results).to_json(out, lines=True, orient="records")
     n_claims = sum(len(r["claims"]) for r in results)
     msg = f"[{model}] Saved {len(results)} cases / {n_claims} claims -> {out}"
@@ -285,17 +267,16 @@ async def async_main(cfg: DictConfig) -> None:
         "judge":     env.get_template("claim_safety_judge.jinja"),
     }
     eval_port = ev.get("eval_port", None)
-    client, api_style = jury.make_judge_client(ev.eval_model, eval_port)
+    client = judge.make_judge_client(eval_port)
     temperature = ev.get("eval_temperature", 0)
-    juror = str(ev.eval_model)
-    decomposer = str(ev.get("decompose_model", None) or ev.eval_model)
-    print(f"Juror (judge): {juror}  |  Decomposer: {decomposer}")
+    eval_model = str(ev.eval_model)
+    print(f"Judge: {eval_model}")
 
     limit = ev.get("commission_limit", None)
     for model in list(ev.models):
-        await evaluate_model(model, notes, templates, client, juror, api_style, decomposer,
+        await evaluate_model(model, notes, templates, client, eval_model,
                              ev.concurrency, temperature, limit)
-    print("\nAll models judged by this juror.")
+    print("\nAll models judged.")
 
 
 @hydra.main(config_path=PROJECT_PATH.joinpath("config").as_posix(),

@@ -38,7 +38,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from utils import PROJECT_PATH
 
 sys.path.insert(0, str(Path(__file__).parent))
-import jury
+import judge
 from virtual_patient import (
     EDUCATION_LEVEL,
     HEALTH_LITERACY,
@@ -176,15 +176,14 @@ async def extract_reference_answer(
     template: jinja2.Template,
     client: AsyncOpenAI,
     eval_model: str,
-    api_style: str,
     semaphore: asyncio.Semaphore,
     *,
     temperature: float = 0,
 ) -> str:
     prompt = template.render(discharge_note=note_text, question=question)
     async with semaphore:
-        answer = await jury.structured_call(
-            client, eval_model, api_style, prompt, ReferenceAnswer,
+        answer = await judge.structured_call(
+            client, eval_model, prompt, ReferenceAnswer,
             temperature=temperature, max_output_tokens=800,
         )
     if answer is None:
@@ -220,7 +219,6 @@ async def judge_answer(
     patient_answer: str,
     client: AsyncOpenAI,
     eval_model: str,
-    api_style: str,
     semaphore: asyncio.Semaphore,
     *,
     temperature: float = 0,
@@ -237,8 +235,8 @@ async def judge_answer(
         f"Provide your rating and a brief reason."
     )
     async with semaphore:
-        result = await jury.structured_call(
-            client, eval_model, api_style, prompt, JudgeResult,
+        result = await judge.structured_call(
+            client, eval_model, prompt, JudgeResult,
             temperature=temperature, max_output_tokens=400,
         )
     if result is None:
@@ -260,7 +258,6 @@ async def evaluate_question(
     q_template: jinja2.Template,
     client: AsyncOpenAI,
     eval_model: str,
-    api_style: str,
     vp_client: AsyncOpenAI,
     vp_model: str,
     semaphore: asyncio.Semaphore,
@@ -272,7 +269,7 @@ async def evaluate_question(
 
     # Reference answer from discharge note
     reference_answer = await extract_reference_answer(
-        note_text, question, ref_template, client, eval_model, api_style, semaphore,
+        note_text, question, ref_template, client, eval_model, semaphore,
         temperature=temperature,
     )
 
@@ -280,13 +277,13 @@ async def evaluate_question(
     pre_messages   = build_patient_messages(patient_system_prompt, [], question_prompt)
     pre_answer     = await ask_patient(pre_messages, vp_client, vp_model, semaphore)
     pre_judgment   = await judge_answer(question, reference_answer, pre_answer, client, eval_model,
-                                        api_style, semaphore, temperature=temperature)
+                                        semaphore, temperature=temperature)
 
     # Post-education: patient conditioned on system prompt + full conversation
     post_messages  = build_patient_messages(patient_system_prompt, conversation, question_prompt)
     post_answer    = await ask_patient(post_messages, vp_client, vp_model, semaphore)
     post_judgment  = await judge_answer(question, reference_answer, post_answer, client, eval_model,
-                                        api_style, semaphore, temperature=temperature)
+                                        semaphore, temperature=temperature)
 
     return {
         "question":         question,
@@ -314,7 +311,6 @@ async def evaluate_case(
     q_template: jinja2.Template,
     client: AsyncOpenAI,
     eval_model: str,
-    api_style: str,
     vp_client: AsyncOpenAI,
     vp_model: str,
     semaphore: asyncio.Semaphore,
@@ -328,7 +324,7 @@ async def evaluate_case(
     for question in COMPREHENSION_QUESTIONS:
         result = await evaluate_question(
             question, note_text, conversation, patient_system_prompt,
-            ref_template, q_template, client, eval_model, api_style, vp_client, vp_model, semaphore,
+            ref_template, q_template, client, eval_model, vp_client, vp_model, semaphore,
             temperature=temperature,
         )
         question_results.append(result)
@@ -360,7 +356,6 @@ async def evaluate_model(
     q_template: jinja2.Template,
     client: AsyncOpenAI,
     eval_model: str,
-    api_style: str,
     vp_client: AsyncOpenAI,
     vp_model: str,
     concurrency: int,
@@ -378,7 +373,7 @@ async def evaluate_model(
             profile_lookup[r["note_id"]],
             note_lookup[r["note_id"]],
             ref_template, q_template,
-            client, eval_model, api_style, vp_client, vp_model, semaphore,
+            client, eval_model, vp_client, vp_model, semaphore,
             temperature=temperature,
         )
         for r in records
@@ -408,7 +403,7 @@ async def async_main(cfg: DictConfig) -> None:
 
     note_lookup, profile_lookup = load_dataset(test_file)
     eval_port = ev.get("eval_port", None)
-    client, api_style = jury.make_judge_client(ev.eval_model, eval_port)
+    client = judge.make_judge_client(eval_port)
     temperature = ev.get("eval_temperature", 0)
 
     vp_port = ev.get("vp_port", None)
@@ -428,7 +423,7 @@ async def async_main(cfg: DictConfig) -> None:
         await evaluate_model(
             model, note_lookup, profile_lookup,
             ref_template, q_template,
-            client, ev.eval_model, api_style, vp_client, vp_model, ev.concurrency,
+            client, ev.eval_model, vp_client, vp_model, ev.concurrency,
             temperature=temperature,
         )
 

@@ -3,16 +3,13 @@ conversation_quality.py
 
 Evaluates conversation quality across all models listed in cfg.evaluation.models.
 For each model, loads data/processed/output/{model}/simulation_results.jsonl and
-saves per-juror raw ratings to
+saves raw ratings to
     data/processed/output/{model}/conversation_quality__{eval_model}.jsonl
+(tagged by judge model; conversation_quality_calculate_score.py reads it).
 
-LLM-as-a-Jury: the four Likert dimensions (naturalness,
-responsiveness, clarity, clinical_relevance) are the juried unit; every juror rates
-the same fixed conversation, so ratings align by dimension. `readability` is a
-DETERMINISTIC textstat computation (not a judgement) and is identical across jurors.
-Each juror runs this pass; conversation_quality_calculate_score.py then MEAN-POOLS
-each dimension across jurors ("average pooling"). A single-juror panel makes the
-pool a no-op and reproduces the old ratings bit-for-bit.
+The judge rates four Likert dimensions (naturalness, responsiveness, clarity,
+clinical_relevance). `readability` is a deterministic textstat computation
+(Flesch-Kincaid grade of the educator turns), not a judgement.
 
 Usage:
     # judge served on eval_port
@@ -43,7 +40,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from utils import PROJECT_PATH
 
 sys.path.insert(0, str(Path(__file__).parent))
-import jury
+import judge
 
 PROMPTS_PATH  = PROJECT_PATH / "prompts"
 OUTPUT_ROOT   = PROJECT_PATH / "data/processed/output"
@@ -108,7 +105,6 @@ async def evaluate_one(
     template: jinja2.Template,
     client: AsyncOpenAI,
     eval_model: str,
-    api_style: str,
     temperature: float,
 ) -> dict:
 
@@ -120,22 +116,22 @@ async def evaluate_one(
 
     async with semaphore:
         try:
-            parsed = await jury.structured_call(
-                client, eval_model, api_style, prompt, ConversationQuality,
+            parsed = await judge.structured_call(
+                client, eval_model, prompt, ConversationQuality,
                 temperature=temperature,
             )
         except openai.BadRequestError as e:
-            # Juror context can't hold this case's conversation (rare long-dialogue
-            # cases exceed a 32k-context juror). Abstain visibly; jury aggregates the rest.
+            # The judge's context window can't hold this case's conversation.
+            # Abstain visibly instead of crashing the stage.
             if "maximum context length" in str(e):
                 print(f"  [ABSTAIN] {eval_model} context overflow on note "
-                      f"{record['note_id']} — skipping this juror's vote for this case.")
+                      f"{record['note_id']} — skipping this case.")
                 return None
             raise
 
     if parsed is None:
         print(f"  [ABSTAIN] {eval_model} schema-invalid on note "
-              f"{record['note_id']} — skipping this juror's vote for this case.")
+              f"{record['note_id']} — skipping this case.")
         return None
 
     return {
@@ -154,7 +150,6 @@ async def evaluate_model(
     template: jinja2.Template,
     client: AsyncOpenAI,
     eval_model: str,
-    api_style: str,
     temperature: float,
     concurrency: int,
 ) -> None:
@@ -163,7 +158,7 @@ async def evaluate_model(
     print(f"[{model}] Evaluating {len(records)} records...")
 
     semaphore = asyncio.Semaphore(concurrency)
-    tasks     = [evaluate_one(semaphore, r, template, client, eval_model, api_style, temperature)
+    tasks     = [evaluate_one(semaphore, r, template, client, eval_model, temperature)
                  for r in records]
     results   = [r for r in await asyncio.gather(*tasks) if r is not None]
     abstained = len(tasks) - len(results)
@@ -172,7 +167,7 @@ async def evaluate_model(
     pd.DataFrame(results).to_json(output_path, lines=True, orient="records")
     msg = f"[{model}] Saved {len(results)} evaluations to {output_path}"
     if abstained:
-        msg += f"  ({abstained} abstained: juror context overflow)"
+        msg += f"  ({abstained} abstained)"
     print(msg)
 
 
@@ -184,11 +179,11 @@ async def async_main(cfg: DictConfig) -> None:
     env      = jinja2.Environment(loader=loader)
     template = env.get_template("conversation_quality.jinja")
     eval_port = ev.get("eval_port", None)
-    client, api_style = jury.make_judge_client(ev.eval_model, eval_port)
+    client = judge.make_judge_client(eval_port)
     temperature = ev.get("eval_temperature", 0)
 
     for model in models:
-        await evaluate_model(model, template, client, ev.eval_model, api_style, temperature, ev.concurrency)
+        await evaluate_model(model, template, client, ev.eval_model, temperature, ev.concurrency)
 
     print("\nAll models evaluated.")
 

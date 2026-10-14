@@ -5,16 +5,10 @@ For each model in cfg.evaluation.models, loads simulation results and evaluates
 each conversation against the discharge note using the topic checklist prompt.
 Raw LLM responses (yes/no + reason per question) are saved to:
     data/processed/output/{model}/topic_checklist_raw__{eval_model}.jsonl
-
-LLM-as-a-Jury: the 21 checklist questions are fixed and every
-juror answers the same (note, conversation), so no shared-generation step is needed
-(unlike commission, which must share a decomposed claim list). Each juror simply runs
-this pass; the file is tagged by juror and the calculate stage majority-votes each
-question. A single-juror panel writes exactly one tagged file and reproduces the old
-numbers bit-for-bit.
+(tagged by judge model; topic_checklist_calculate_score.py reads it).
 
 Usage:
-    # one juror (served on eval_port); repeat per juror in the SBATCH loop
+    # judge served on eval_port
     python src/evaluation/topic_checklist_raw_score.py "evaluation.eval_model=gemma-4-31B-it"
 
     # single model override:
@@ -41,7 +35,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from utils import PROJECT_PATH
 
 sys.path.insert(0, str(Path(__file__).parent))
-import jury
+import judge
 
 PROMPTS_PATH = PROJECT_PATH / "prompts"
 OUTPUT_ROOT  = PROJECT_PATH / "data/processed/output"
@@ -129,7 +123,6 @@ async def evaluate_one(
     template: jinja2.Template,
     client: AsyncOpenAI,
     eval_model: str,
-    api_style: str,
     temperature: float,
 ) -> dict:
     conversation_history = format_conversation(record["conversation"])
@@ -140,24 +133,22 @@ async def evaluate_one(
 
     async with semaphore:
         try:
-            parsed = await jury.structured_call(
-                client, eval_model, api_style, prompt, TopicChecklistResponse,
+            parsed = await judge.structured_call(
+                client, eval_model, prompt, TopicChecklistResponse,
                 temperature=temperature,
             )
         except openai.BadRequestError as e:
-            # This juror's context window can't hold this case's note+conversation
-            # (rare: a few long-dialogue cases exceed a 32k-context juror). Abstain
-            # visibly instead of crashing the stage; the jury aggregates over the
-            # jurors that could score the case (union at the calculate stage).
+            # The judge's context window can't hold this case's note + conversation.
+            # Abstain visibly instead of crashing the stage.
             if "maximum context length" in str(e):
                 print(f"  [ABSTAIN] {eval_model} context overflow on note "
-                      f"{record['note_id']} — skipping this juror's vote for this case.")
+                      f"{record['note_id']} — skipping this case.")
                 return None
             raise
 
     if parsed is None:
         print(f"  [ABSTAIN] {eval_model} schema-invalid on note "
-              f"{record['note_id']} — skipping this juror's vote for this case.")
+              f"{record['note_id']} — skipping this case.")
         return None
 
     return {
@@ -178,7 +169,6 @@ async def evaluate_model(
     template: jinja2.Template,
     client: AsyncOpenAI,
     eval_model: str,
-    api_style: str,
     temperature: float,
     concurrency: int,
 ) -> None:
@@ -196,7 +186,7 @@ async def evaluate_model(
             semaphore, r,
             note_lookup[r["note_id"]],
             profile_lookup[r["note_id"]],
-            template, client, eval_model, api_style, temperature,
+            template, client, eval_model, temperature,
         )
         for r in filtered
     ]
@@ -207,7 +197,7 @@ async def evaluate_model(
     pd.DataFrame(results).to_json(output_path, lines=True, orient="records")
     msg = f"[{model}] Saved {len(results)} evaluations to {output_path}"
     if abstained:
-        msg += f"  ({abstained} abstained: juror context overflow)"
+        msg += f"  ({abstained} abstained)"
     print(msg)
 
 
@@ -223,13 +213,13 @@ async def async_main(cfg: DictConfig) -> None:
     env      = jinja2.Environment(loader=loader)
     template = env.get_template("topic_checklist.jinja")
     eval_port = ev.get("eval_port", None)
-    client, api_style = jury.make_judge_client(ev.eval_model, eval_port)
+    client = judge.make_judge_client(eval_port)
     temperature = ev.get("eval_temperature", 0)
 
     for model in models:
         await evaluate_model(
             model, note_lookup, profile_lookup,
-            template, client, ev.eval_model, api_style, temperature, ev.concurrency,
+            template, client, ev.eval_model, temperature, ev.concurrency,
         )
 
     print("\nAll models evaluated.")

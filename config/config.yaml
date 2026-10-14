@@ -13,12 +13,6 @@ evaluation:
     - medgemma-27b-text-it
   eval_model: gemma-4-31B-it
   eval_port: null  # null = OpenAI cloud; set to vllm port for local models
-  # LLM-as-a-Jury. When set, juried calculate stages load one
-  # raw file per juror (<stage>_raw__<juror>.jsonl) and aggregate: strict majority
-  # vote for categorical verdicts, mean for Likert. null/empty -> single-judge,
-  # i.e. exactly eval_model (the migration degenerates to the old behaviour at n=1).
-  jury: null            # null -> single judge (eval_model), as reported
-  decompose_model: null # claim/item generator for juried stages; null -> eval_model
   concurrency: 5
   vp_port: null   # null = use eval_model for patient; set to VP vllm port for comprehension_score
   commission_limit: null # safety_commission_raw_score.py: cap cases per model; null = full set
