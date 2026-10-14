@@ -1,0 +1,49 @@
+project_path: null   # null = repository root
+
+
+evaluation:
+  models:
+    - gpt-5.5
+    - gpt-5.4-nano
+    - gpt-5.4-mini
+    - Llama-3.3-70B-Instruct
+    - Qwen3-32B
+    - Qwen3-4B
+    - medgemma-4b-it
+    - medgemma-27b-text-it
+  eval_model: gemma-4-31B-it
+  eval_port: null  # null = OpenAI cloud; set to vllm port for local models
+  # LLM-as-a-Jury. When set, juried calculate stages load one
+  # raw file per juror (<stage>_raw__<juror>.jsonl) and aggregate: strict majority
+  # vote for categorical verdicts, mean for Likert. null/empty -> single-judge,
+  # i.e. exactly eval_model (the migration degenerates to the old behaviour at n=1).
+  jury: null            # null -> single judge (eval_model), as reported
+  decompose_model: null # claim/item generator for juried stages; null -> eval_model
+  concurrency: 5
+  vp_port: null   # null = use eval_model for patient; set to VP vllm port for comprehension_score
+  commission_limit: null # safety_commission_raw_score.py: cap cases per model; null = full set
+  eval_temperature: 0  # judge sampling temperature; 0 = reproducible. Measured: at the
+                       # API default, re-extraction churns 60% of cases' item counts.
+
+discharge_bench:
+  test_file: discharge_bench_curated_v3.jsonl   # relative to data/processed/ ; canonical n=320, 16 merged ICD chapters, annotations repaired
+  run_tag: null   # e.g. run1..run5 for the variance study; suffixes ONLY the output dir (output/<educator.backend>__<run_tag>/). educator.backend itself is unchanged.
+
+  patient:
+    backend: llama3
+    port: 5001
+
+  educator:
+    backend: llama3
+    port: 5002
+    host: localhost   # set to remote node hostname for multi-node jobs
+
+  env_agent:
+    eval_model: Qwen3.5-9B
+    max_retries: 2
+    port: null        # null = OpenAI cloud; set to port number for local vllm
+    host: localhost
+
+  simulation:
+    max_turns: 100
+    n_workers: 20

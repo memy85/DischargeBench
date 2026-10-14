@@ -1,0 +1,33 @@
+Instructions:
+- You are an expert medical annotator. Below is a conversation in which an AI educator explained a hospital discharge to a patient.
+- Decompose **only the educator's speech** into atomic, checkable clinical claims.
+- **One claim = one checkable proposition about the patient's care.** Split compound statements.
+  - "Take metoprolol 100 mg once a day for your blood pressure, and don't stop it suddenly" is TWO claims: the dosing instruction, and the do-not-stop-abruptly warning.
+- Extract ONLY propositions that could be true or false about this patient's care. **Do not extract rapport, empathy, or conversational filler.** These are NOT claims:
+  - "I understand this is worrying, let's take it slow."
+  - "Does that make sense so far?"
+  - "I'm here to help you understand your discharge."
+  Extract nothing from them. A turn may yield zero claims.
+- Do extract, when the educator asserts them:
+  - medication instructions (drug, dose, route, frequency, purpose, warnings, interactions)
+  - signs/symptoms to watch for, and what to do about them
+  - follow-up appointments, tests, timing, who to contact
+  - activity restrictions, wound/self-care instructions, diet
+  - statements about the patient's diagnosis, procedure, or hospital course
+- Quote the educator faithfully in `claim`, normalised into a standalone statement. It must be understandable without the surrounding conversation — resolve pronouns ("it" → the drug name) using only what the educator actually said. Do not add clinical detail the educator did not state.
+- `verbatim` must be an exact span copied from the educator's turn that the claim comes from. Never invent it.
+- If the educator repeats a claim, extract it once.
+
+Conversation:
+{{ conversation_history }}
+
+Return JSON and nothing else:
+{
+  "claims": [
+    {
+      "claim": "<one atomic, standalone clinical proposition the educator asserted>",
+      "verbatim": "<exact span copied from the educator's speech>",
+      "category": "<medication|warning_sign|follow_up|self_care|diagnosis|other>"
+    }
+  ]
+}

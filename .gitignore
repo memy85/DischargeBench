@@ -1,0 +1,14 @@
+# MIMIC-derived data and run outputs: never commit (PhysioNet DUA)
+data/
+outputs/
+logs/
+figures/
+
+# fonts are fetched separately (Fira Sans, SIL OFL)
+fonts/
+
+__pycache__/
+*.pyc
+.venv/
+.ipynb_checkpoints/
+.env

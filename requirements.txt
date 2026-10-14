@@ -1,0 +1,21 @@
+# Python 3.12. Pinned to the versions used for the reported results.
+# Simulation / evaluation (LLM calls)
+openai==2.31.0
+hydra-core==1.3.2
+omegaconf==2.3.0
+pydantic==2.12.5
+jinja2==3.1.6
+pyyaml==6.0.3
+textstat==0.7.13
+# Analysis
+numpy==2.2.6
+pandas==2.3.3
+scipy==1.17.1
+scikit-learn==1.8.0
+statsmodels==0.14.6
+matplotlib==3.10.8
+seaborn==0.13.2
+tabulate==0.10.0
+jupyter==1.1.1
+# Model serving (GPU hosts only; install separately if preferred)
+# vllm==0.19.0

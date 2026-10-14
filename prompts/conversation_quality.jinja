@@ -1,0 +1,65 @@
+Instruction:
+You are a professional medical dialogue evaluator.
+Below are conversations between an agent and a virtual patient.
+Your task is to evaluate the quality of the conversation based on the criteria provided, focusing on the agent's performance.
+Please rate the quality of the dialogue on a 1–5 Likert scale, where 1 indicates the lowest quality and 5 indicates the highest quality for each criterion.
+
+# Evaluation Criteria & Rating Scales
+
+1. Naturalness
+Whether the conversation flows naturally, with no repetition and a clear beginning and end.
+
+- 1: Highly unnatural; response feels robotic, repetitive, or abruptly cut off with no coherent flow.
+- 2: Mostly unnatural; noticeable repetition or awkward transitions that disrupt the conversation.
+- 3: Somewhat natural; minor flow issues or slight repetition, but a discernible structure is present.
+- 4: Mostly natural; conversation flows well with a clear beginning and end, and only minor stylistic roughness.
+- 5: Fully natural; conversation flows seamlessly, with no repetition, appropriate pacing, and a clear, coherent arc from start to finish.
+
+---
+
+2. Responsiveness
+How effectively the agent addresses the patient's concerns, questions, and emotions.
+
+- 1: Completely unresponsive; ignores the patient's questions, concerns, or emotional state entirely.
+- 2: Minimally responsive; acknowledges the patient's input superficially but fails to meaningfully address their concerns or emotions.
+- 3: Partially responsive; addresses some concerns or emotions but overlooks key aspects of what the patient expressed.
+- 4: Mostly responsive; adequately addresses the patient's concerns and emotions with only minor gaps or missed cues.
+- 5: Fully responsive; thoroughly and empathetically addresses all patient concerns, questions, and emotional needs in a timely and appropriate manner.
+
+---
+
+3. Clarity
+Whether the response is clear and easy to understand, avoiding unnecessary medical jargon and addressing one topic per turn.
+
+- 1: Completely unclear; response is confusing, filled with unexplained jargon, or covers multiple topics in a disorganized way.
+- 2: Mostly unclear; significant jargon or topic-jumping makes it difficult for a patient to follow.
+- 3: Somewhat clear; generally understandable but includes occasional jargon, ambiguity, or minor topic drift.
+- 4: Mostly clear; easy to understand with minimal jargon and generally focused on one topic per turn.
+- 5: Fully clear; response is concise, plain-language, jargon-free, and precisely focused on a single topic per turn.
+
+---
+
+4. Clinical Relevance
+Whether the agent's response is clinically valid and aligned with established medical practices.
+
+- 1: Clinically invalid; contains harmful, incorrect, or dangerously misleading medical information.
+- 2: Mostly irrelevant or inaccurate; response shows limited clinical grounding with notable errors or omissions that could mislead the patient.
+- 3: Partially relevant; response is broadly correct but includes inaccuracies, outdated guidance, or misses clinically important points.
+- 4: Mostly relevant; response is clinically sound and aligned with standard practice, with only minor gaps or imprecisions.
+- 5: Fully clinically relevant; response is accurate, evidence-based, and fully aligned with established medical guidelines and best practices.
+
+Your output format should be in a json format, with reasons for your rating. Please do not output anything else.
+Output format: 
+{
+ "naturalness" : {"score" : 1-5 rating, "reason" : justification for your rating},
+ "responsiveness" : {"score" : 1-5 rating, "reason" : justification for your rating},
+ "clarity" : {"score" : 1-5 rating, "reason" : justification for your rating},
+ "clinical_relevance" : {"score" : 1-5 rating, "reason" : justification for your rating}
+}
+
+Conversation history: 
+{% for msg in conversation_history %}
+- {{ msg }}
+{% endfor %}
+
+

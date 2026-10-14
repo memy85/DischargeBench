@@ -1,0 +1,126 @@
+Instructions: 
+- You are an expert medical annotator. Your task is to analyze the conversation history based on the patient note to determine whether specific topics were discussed.
+- Please answer the following questions about the conversation based on the patient note. For each question, provide a clear yes/no answer.
+- Only answer "yes" or "no" for topics that are mentioned in the patient note. If a question is not answerable because it was not mentioned in the patient note (e.g., no procedures were performed, no post-discharge procedures scheduled), answer "no" (Not Applicable) for that question. 
+- Even if the conversation discusses contents such as discharge diagnosis, if there are any factual discrepancies, please answer as "no". Answer "yes" only the ones that are found in the patient note and discussed in the conversation.
+- Before providing your final answer, think through each question carefully based on the patient note. Be thorough and precise in your evaluation. 
+- The reasons should be 1-2 sentences containing references or quotes. 
+
+Checklist:
+Q1. Did the conversation discuss the patient's main discharge diagnosis (or Chief Complaint) mentioned in the patient note? 
+Q2. Did the conversation discuss newly added discharge medications mentioned in the patient note?
+  Q2.1. Did the conversation discuss the exact dosage of the medication mentioned in the patient note?
+  Q2.2. Did the conversation discuss the exact route of the medication mentioned in the patient note (e.g., oral, injection, intravenous)?
+  Q2.3. Did the conversation discuss the frequency of medication administration mentioned in the patient note(e.g., twice daily, once at bedtime)?
+  Q2.4. Did the conversation discuss any side effects or precautions related to the medication mentioned in the patient note? 
+Q3. Did the conversation discuss procedures performed during the hospital stay mentioned in the patient note?
+  Q3.1. Did the conversation discuss the specific names or types of procedures mentioned in the patient note?
+  Q3.2. Did the conversation discuss the clinical indications for these procedures mentioned in the patient note?
+  Q3.3. Did the conversation discuss the outcomes or results of these procedures mentioned in the patient note?
+Q4. Did the conversation discuss post-discharge treatment mentioned in the patient note?
+  Q4.1. Did the conversation discuss the timing or scheduling of post-discharge procedures mentioned in the patient note?
+  Q4.2. Did the conversation discuss preparation instructions for post-discharge procedures mentioned in the patient note?
+  Q4.3. Did the conversation discuss follow-up care related to post-discharge procedure mentioned in the patient note?
+Q5. Did the conversation discuss emergency signs or symptoms and recommended actions mentioned in the patient note?
+  Q5.1. Did the conversation discuss specific warning signs the patient should watch for, mentioned in the patient note?
+  Q5.2. Did the conversation discuss what actions to take if emergency symptoms occur mentioned in the patient note? 
+  Q5.3. Did the conversation discuss when to seek immediate medical attention mentioned in the patient note?
+Q6. Did the conversation discuss follow-up appointments mentioned in the patient note? 
+  Q6.1. Did the conversation discuss the timing or scheduling of follow-up appointments mentioned in the patient note?
+  Q6.2. Did the conversation discuss what to expect during follow-up appointments mentioned in the patient note? 
+
+Patient Note:
+{{ patient_note }}
+
+Conversation History:
+{{ conversation_history }}
+
+Provide your response in the following JSON format and nothing else.
+Output format: 
+
+{
+    "Q1": {
+        "answer": "<yes/no>",
+        "reason": "<brief reference or quote from conversation/note supporting this answer>"
+    },
+    "Q2": {
+        "answer": "<yes/no>",
+        "reason": "<brief reference or quote from conversation/note supporting this answer>"
+    },
+    "Q2_1": {
+        "answer": "<yes/no>",
+        "reason": "<brief reference or quote from conversation/note supporting this answer>"
+    },
+    "Q2_2": {
+        "answer": "<yes/no>",
+        "reason": "<brief reference or quote from conversation/note supporting this answer>"
+    },
+    "Q2.3": {
+        "answer": "<yes/no>",
+        "reason": "<brief reference or quote from conversation/note supporting this answer>"
+    },
+    "Q2.4": {
+        "answer": "<yes/no>",
+        "reason": "<brief reference or quote from conversation/note supporting this answer>"
+    },
+    "Q3": {
+        "answer": "<yes/no>",
+        "reason": "<brief reference or quote from conversation/note supporting this answer>"
+    },
+    "Q3.1": {
+        "answer": "<yes/no>",
+        "reason": "<brief reference or quote from conversation/note supporting this answer>"
+    },
+    "Q3.2": {
+        "answer": "<yes/no>",
+        "reason": "<brief reference or quote from conversation/note supporting this answer>"
+    },
+    "Q3.3": {
+        "answer": "<yes/no>",
+        "reason": "<brief reference or quote from conversation/note supporting this answer>"
+    },
+    "Q4": {
+        "answer": "<yes/no>",
+        "reason": "<brief reference or quote from conversation/note supporting this answer>"
+    },
+    "Q4.1": {
+        "answer": "<yes/no>",
+        "reason": "<brief reference or quote from conversation/note supporting this answer>"
+    },
+    "Q4.2": {
+        "answer": "<yes/no>",
+        "reason": "<brief reference or quote from conversation/note supporting this answer>"
+    },
+    "Q4.3": {
+        "answer": "<yes/no>",
+        "reason": "<brief reference or quote from conversation/note supporting this answer>"
+    },
+    "Q5": {
+        "answer": "<yes/no>",
+        "reason": "<brief reference or quote from conversation/note supporting this answer>"
+    },
+    "Q5.1": {
+        "answer": "<yes/no>",
+        "reason": "<brief reference or quote from conversation/note supporting this answer>"
+    },
+    "Q5.2": {
+        "answer": "<yes/no>",
+        "reason": "<brief reference or quote from conversation/note supporting this answer>"
+    },
+    "Q5.3": {
+        "answer": "<yes/no>",
+        "reason": "<brief reference or quote from conversation/note supporting this answer>"
+    },
+    "Q6": {
+        "answer": "<yes/no>",
+        "reason": "<brief reference or quote from conversation/note supporting this answer>"
+    },
+    "Q6.1": {
+        "answer": "<yes/no>",
+        "reason": "<brief reference or quote from conversation/note supporting this answer>"
+    },
+    "Q6.2": {
+        "answer": "<yes/no>",
+        "reason": "<brief reference or quote from conversation/note supporting this answer>"
+    }
+}
