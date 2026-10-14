@@ -77,7 +77,7 @@ The Python entry points use [Hydra](https://hydra.cc), so `discharge_bench.*` an
 
 ## Data
 
-The benchmark has **320 MIMIC-IV discharge summaries**, 16 ICD chapters × 20 cases, balanced within each chapter on personality (5 × 4), health literacy (10 low / 10 high) and ICD-9 / ICD-10 (10 / 10).
+The benchmark has **320 MIMIC-IV discharge summaries**, 16 ICD chapters × 20 cases, balanced within each chapter on personality (5 × 4) and health literacy (10 low / 10 high). ICD-9 / ICD-10 is 10 / 10 within each of the 8 chapters whose ICD-9 and ICD-10 titles were merged.
 
 Each case record holds the discharge note, its ICD code and chapter, the patient profile extracted from the note with the assigned persona, and the note-grounded checklist fields that gate each TCS question. The case file, `discharge_bench_curated_v3.jsonl`, goes in `data/processed/`.
 
