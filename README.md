@@ -1,10 +1,12 @@
 # DischargeBench
 
-Code for **From Discharge Notes to Patient Understanding: Persona-Grounded, Open-Ended Simulation of LLMs as Discharge Educators** (Won Seok Jang, Zonghai Yao, Hong Yu).
+Code for **DischargeBench: Pre-Deployment Evaluation of LLM Discharge Educators through Persona-Grounded Patient Simulation** (Won Seok Jang, Youngbin Jang, Chanyoung Ko, Hyunwook Kim, Zonghai Yao, Hong Yu).
 
 [![arXiv](https://img.shields.io/badge/arXiv-2609.20827-b31b1b.svg)](https://arxiv.org/abs/2609.20827)
 
-DischargeBench evaluates LLMs as discharge educators. An educator model is given a real discharge note and teaches a simulated patient about their discharge: diagnosis, treatment during the stay, new medications, follow-up and the warning signs that mean coming back to hospital. The simulated patient has a persona (personality, health literacy, education level, recall of their own history), and an in-loop Environment Agent keeps the patient in character and ends the session. After the conversation, judges score what the educator covered, what the patient understood, and whether anything the educator said was unsafe.
+DischargeBench is a pre-deployment benchmark for LLMs as discharge educators. A candidate Educator is given a real discharge note and teaches a persona-grounded Virtual Patient about their discharge in an open-ended, multi-turn conversation: diagnosis, treatment during the stay, new medications, follow-up and the warning signs that mean coming back to hospital. The Virtual Patient varies in personality, education level, health literacy and recall of their own medical history. A Simulation Orchestrator regulates the patient side only, so the Educator's behaviour is never altered. Each conversation is then scored by an LLM judge validated against physician annotations.
+
+DischargeBench is intended as a screening step before human evaluation, not as evidence that a model is ready to educate patients.
 
 This repository contains the simulation harness, every prompt, the evaluation code and the analysis scripts. The benchmark cases are derived from MIMIC-IV-Note and are distributed separately through PhysioNet (see [Data](#data)).
 
@@ -15,17 +17,17 @@ This repository contains the simulation harness, every prompt, the evaluation co
                               │
         ┌─────────────────────┴─────────────────────┐
         ▼                                           ▼
-  Educator (model under test)  ◄── conversation ──►  Simulated patient (persona)
+  Educator (model under test)  ◄── conversation ──►  Virtual Patient (persona)
         │                                           │
-        └──────────────► Environment Agent ◄────────┘
-                  moderates the patient, ends the session
+        └──────────► Simulation Orchestrator ◄──────┘
+                  regulates the patient, ends the session
                               │
                               ▼
-     TCS (topics covered) · SCS (patient comprehension) · CLSA (claim safety) · CQ
+        Conversation Quality · TCS · SCS · CLSA
 ```
 
-- **Simulated patient:** `meta-llama/Llama-3.3-70B-Instruct`. Five personalities (neutral, anxious, distrustful, highly conscientious, minimizer), two health-literacy levels, three education levels and three levels of recall.
-- **Environment Agent:** `Qwen/Qwen3.5-9B`, thinking disabled. It judges each patient turn, corrects out-of-character turns, and decides when the session is complete.
+- **Virtual Patient:** `meta-llama/Llama-3.3-70B-Instruct`. Five personalities (neutral, anxious, distrustful, high conscientiousness, minimizer), three education levels (elementary, high school, college), two health-literacy levels (low, high) and three levels of past-medical-history recall (poor, partial, accurate).
+- **Simulation Orchestrator:** `Qwen/Qwen3.5-9B`, thinking disabled (implemented in `src/environment_agent.py`). It checks each patient turn, corrects out-of-character turns, and decides when the session is complete.
 - **Judge:** `google/gemma-4-31B-it` at temperature 0 for all metrics.
 
 ## Metrics
@@ -33,25 +35,25 @@ This repository contains the simulation harness, every prompt, the evaluation co
 | Metric | What it measures | Code |
 |---|---|---|
 | **TCS**, Topic Checklist Score | Coverage of a 21-question discharge checklist, gated to the topics the note actually contains | `src/evaluation/topic_checklist_*.py` |
-| **SCS**, comprehension | The patient answers six questions after the session; answers are graded against references from the note | `src/evaluation/comprehension_score.py`, `scripts/scoring/score_comprehension_on.py` |
+| **SCS**, Simulated Comprehension Score | The Virtual Patient answers six questions after the session; answers are graded against references from the note | `src/evaluation/comprehension_score.py`, `scripts/scoring/score_comprehension_on.py` |
 | **CLSA**, Claim-Level Safety Audit | Educator turns are split into atomic claims; each claim is judged for grounding in the note and clinical safety. Reports unsafe-advice and wrong-instruction rates | `src/evaluation/safety_commission_*.py` |
-| **CQ**, Conversation Quality | Naturalness, responsiveness, clarity and clinical relevance on 1–5 scales, plus Flesch–Kincaid grade | `src/evaluation/conversation_quality*.py` |
+| **Conversation Quality** | Naturalness, responsiveness, clarity and clinical relevance on 1–5 scales, plus Flesch–Kincaid grade | `src/evaluation/conversation_quality*.py` |
 
 ## Repository layout
 
 ```
 config/config.yaml          model names, ports, dataset file, evaluation settings
 src/                        simulation harness
-  virtual_patient.py          simulated patient
-  educator_agent.py           educator under test
-  environment_agent.py        in-loop Environment Agent
+  virtual_patient.py          Virtual Patient
+  educator_agent.py           Educator under test
+  environment_agent.py        Simulation Orchestrator
   case_session.py             single-case driver
   discharge_bench.py          parallel runner over the benchmark (resumable)
-  evaluation/                 LLM-judge metrics (TCS, SCS, CLSA, CQ)
+  evaluation/                 LLM-judge metrics (Conversation Quality, TCS, SCS, CLSA)
 prompts/                    Jinja templates for every LLM role and judge
 scripts/
   run/                        end-to-end scripts: 01 simulate → 02 evaluate → 03 analyze
-  scoring/                    reported comprehension score
+  scoring/                    reported SCS
   analysis/                   mean ± SD over runs, case-bootstrap CIs, ICD-chapter, item-level and audit analyses
 notebooks/                  persona / patient-factor / ICD-chapter stratification and session-outcome analysis
 results/main/               aggregate outputs behind the paper's tables (no patient-level text)
@@ -76,7 +78,7 @@ The benchmark has **320 MIMIC-IV discharge summaries**, 16 ICD chapters × 20 ca
 
 Each case record holds the discharge note, its ICD code and chapter, the patient profile extracted from the note with the assigned persona, and the note-grounded checklist fields that gate each TCS question. The case file, `discharge_bench_curated_v3.jsonl`, goes in `data/processed/`.
 
-The case records derive from MIMIC-IV-Note and cannot be redistributed here. They will be released on PhysioNet as **MIMIC-IV-Ext-DischargeBench** under the PhysioNet credentialed-access license; the link will be added here when the release is available. Access requires credentialed PhysioNet access to [MIMIC-IV](https://physionet.org/content/mimiciv/) and [MIMIC-IV-Note](https://physionet.org/content/mimic-iv-note/) and a signed Data Use Agreement.
+The case records derive from MIMIC-IV (v3.1) and MIMIC-IV-Note (v2.2) and cannot be redistributed here. They will be released on PhysioNet as **MIMIC-IV-Ext-DischargeBench**, together with each case's Virtual Patient traits and medical profile and the complete simulation records; the link will be added here when the release is available. Access requires credentialed PhysioNet access, a signed PhysioNet Credentialed Health Data Use Agreement (v1.5.0), and the CITI "Data or Specimens Only Research" training.
 
 ## Running the benchmark
 
@@ -86,7 +88,7 @@ Outputs go to `data/processed/output/<educator>__run<r>/`, one directory per edu
 # 1. Simulation (GPU): 5 runs of one educator over the 320 cases
 bash scripts/run/01_simulate.sh Qwen3-32B          # any educator listed in scripts/run/common.sh
 
-# 2. Evaluation (GPU): TCS, CLSA, CQ and comprehension for each run
+# 2. Evaluation (GPU): Conversation Quality, TCS, SCS and CLSA for each run
 bash scripts/run/02_evaluate.sh Qwen3-32B
 
 # 3. Scoring and analysis (CPU)
@@ -113,15 +115,15 @@ To evaluate a new educator, add its served name and Hugging Face id to `EDUCATOR
 
 - The judge runs at temperature 0. Simulation is unseeded by design: the five runs measure run-to-run variance.
 - Bootstrap CIs are seeded.
-- `python scripts/scoring/score_comprehension_on.py --check` verifies existing comprehension outputs without rewriting them.
+- `python scripts/scoring/score_comprehension_on.py --check` verifies existing SCS outputs without rewriting them.
 - Figures are set in Fira Sans (SIL Open Font License, from Google Fonts). The plotting code loads any `.ttf` files placed in `fonts/`; without them matplotlib uses its default font.
 
 ## Citation
 
 ```bibtex
 @article{jang2026dischargebench,
-  title   = {From Discharge Notes to Patient Understanding: Persona-Grounded, Open-Ended Simulation of {LLMs} as Discharge Educators},
-  author  = {Jang, Won Seok and Yao, Zonghai and Yu, Hong},
+  title   = {{DischargeBench}: Pre-Deployment Evaluation of {LLM} Discharge Educators through Persona-Grounded Patient Simulation},
+  author  = {Jang, Won Seok and Jang, Youngbin and Ko, Chanyoung and Kim, Hyunwook and Yao, Zonghai and Yu, Hong},
   journal = {arXiv preprint arXiv:2609.20827},
   year    = {2026}
 }
