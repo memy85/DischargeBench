@@ -19,18 +19,21 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from pathlib import Path
 
 import pandas as pd
 
 PROJECT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(PROJECT / "src"))
+from utils import CONFIG   # noqa: E402
 OUT = PROJECT / "data/processed/output"
-DATASET = PROJECT / "data/processed/discharge_bench_curated_v3.jsonl"
-MODELS = [("Llama-3.3-70B", "Llama-3.3-70B-Instruct"), ("Qwen3-4B", "Qwen3-4B"), ("Qwen3-32B", "Qwen3-32B"),
-          ("MedGemma-4B", "medgemma-4b-it"), ("MedGemma-27B", "medgemma-27b-text-it"),
-          ("GPT-5.4-nano", "gpt-5.4-nano"), ("GPT-5.4-mini", "gpt-5.4-mini"), ("GPT-5.5", "gpt-5.5")]
-RUNS = range(1, 6)
-SHORT_MAX_TURNS, LOW_TCS = 15, 0.5
+DATASET = PROJECT / "data/processed" / CONFIG["discharge_bench"]["test_file"]
+_DISPLAY = {e["name"]: e["display"] for e in CONFIG["educators"]}
+MODELS = [(_DISPLAY[m], m) for m in CONFIG["analysis"]["display_order"]]   # (display, output dir)
+RUNS = CONFIG["runs"]
+SHORT_MAX_TURNS = CONFIG["analysis"]["audit"]["short_max_turns"]
+LOW_TCS = CONFIG["analysis"]["audit"]["low_tcs"]
 AI_DISCLOSURE = re.compile(
     r"\b(as an? AI|language model|I am not a real|I'?m just a|I cannot pretend|I can'?t actually|"
     r"in reality I'?m|as a chatbot|i am an? (AI|virtual) assistant|AI assistant|trained by|my training|"
@@ -42,7 +45,7 @@ def main() -> None:
     rows = []
     for disp, d in MODELS:
         for r in RUNS:
-            run = OUT / f"{d}__run{r}"
+            run = OUT / f"{d}__{r}"
             tcs = {json.loads(l)["note_id"]: json.loads(l)["tcs_score"]
                    for l in open(run / "topic_checklist_score.jsonl") if l.strip()}
             for line in open(run / "simulation_results.jsonl"):

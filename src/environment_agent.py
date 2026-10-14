@@ -2,7 +2,8 @@
 environment_agent.py
 
 Environment Agent for clinical simulation oversight.
-Prompt templates are loaded from environment_prompt.jinja at startup.
+Prompt templates are loaded at startup from the file named by prompts.environment in
+config/config.yaml.
 
 Retry strategy: Option 3 -- bad turns are discarded entirely and never enter
 conversation history. The correction instruction is injected into the agent's
@@ -21,14 +22,16 @@ from openai import OpenAI
 from pydantic import BaseModel
 from jinja2 import Environment, FileSystemLoader
 
+from utils import CONFIG, PROMPTS_PATH
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Template loading
 # ---------------------------------------------------------------------------
 
-_TEMPLATE_DIR  = Path(__file__).parent.parent.joinpath("prompts")
-_TEMPLATE_FILE = "environment_prompt.jinja"
+_TEMPLATE_DIR  = PROMPTS_PATH
+_TEMPLATE_FILE = CONFIG["prompts"]["environment"]
 
 _jinja_env = Environment(
     loader=FileSystemLoader(_TEMPLATE_DIR),
@@ -184,13 +187,13 @@ class EnvironmentAgent:
         Model used by the environment agent for evaluation.
     max_retries : int
         Max discarded attempts per turn before escalating to HARD_STOP.
+    min_turns_before_complete : int
+        A session_complete verdict is ignored until the conversation has this many
+        turns, so the judge cannot end the session after only an opening exchange.
     """
 
     PATIENT_LEVEL:  InterventionLevel = InterventionLevel.MODERATE
     EDUCATOR_LEVEL: InterventionLevel = InterventionLevel.OBSERVE
-
-    # Guards against the judge declaring "complete" after only an opening exchange.
-    MIN_TURNS_BEFORE_COMPLETE: int = 10
 
     _SYSTEM_PROMPT: str = _render_macro("eval_system")
 
@@ -200,9 +203,11 @@ class EnvironmentAgent:
         max_retries: int = 2,
         port:        int | None = None,
         host:        str = "localhost",
+        min_turns_before_complete: int = 10,
     ) -> None:
         self.eval_model  = eval_model
         self.max_retries = max_retries
+        self.MIN_TURNS_BEFORE_COMPLETE = min_turns_before_complete
         if port is not None:
             self._client = OpenAI(base_url=f"http://{host}:{port}/v1", api_key="EMPTY")
         else:

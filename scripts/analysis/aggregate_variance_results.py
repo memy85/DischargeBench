@@ -24,24 +24,17 @@ import numpy as np
 import pandas as pd
 
 PROJECT_DIR = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(PROJECT_DIR / "src"))
+from utils import CONFIG   # noqa: E402
 DATA_ROOT   = PROJECT_DIR / "data/processed"
 OUTPUT_ROOT = DATA_ROOT / "output"
-CURATED_PATH = DATA_ROOT / "discharge_bench_curated_v3.jsonl"
+CURATED_PATH = DATA_ROOT / CONFIG["discharge_bench"]["test_file"]
 
-EDUCATORS = [
-    "gpt-5.5",
-    "gpt-5.4-nano",
-    "gpt-5.4-mini",
-    "Llama-3.3-70B-Instruct",
-    "Qwen3-32B",
-    "Qwen3-4B",
-    "medgemma-4b-it",
-    "medgemma-27b-text-it",
-]
-RUN_TAGS = [f"run{i}" for i in range(1, 6)]
+EDUCATORS = [e["name"] for e in CONFIG["educators"]]   # config order (shared bootstrap RNG)
+RUN_TAGS = CONFIG["runs"]
 
-N_BOOTSTRAP = 10000
-BOOT_SEED = 20260807  # aggregation-side bootstrap only; unrelated to the (unseeded) sim runs
+N_BOOTSTRAP = CONFIG["analysis"]["run_sd_bootstrap"]["B"]
+BOOT_SEED = CONFIG["analysis"]["run_sd_bootstrap"]["seed"]  # aggregation-side bootstrap only; unrelated to the (unseeded) sim runs
 
 HEADLINE_METRICS = ["tcs_overall", "comprehension_post"]  # post = final understanding (shift kept as secondary)
 

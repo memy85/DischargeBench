@@ -1,8 +1,100 @@
 project_path: null   # null = repository root
 
+# ---------------------------------------------------------------------------
+# Educators under test
+# ---------------------------------------------------------------------------
+# name:    served model name (also the output directory: data/processed/output/<name>__<run>/)
+# hf_id:   Hugging Face id served with vLLM; null = OpenAI API (needs OPENAI_API_KEY)
+# display: name used in tables and figures
+# The order is the one the bootstrap scripts iterate in: they share one seeded RNG across
+# educators, so reordering this list changes the last digits of the reported CIs.
+educators:
+  - {name: gpt-5.5,                hf_id: null,                              display: GPT-5.5}
+  - {name: gpt-5.4-nano,           hf_id: null,                              display: GPT-5.4-nano}
+  - {name: gpt-5.4-mini,           hf_id: null,                              display: GPT-5.4-mini}
+  - {name: Llama-3.3-70B-Instruct, hf_id: meta-llama/Llama-3.3-70B-Instruct, display: Llama-3.3-70B}
+  - {name: Qwen3-32B,              hf_id: Qwen/Qwen3-32B,                    display: Qwen3-32B}
+  - {name: Qwen3-4B,               hf_id: Qwen/Qwen3-4B,                     display: Qwen3-4B}
+  - {name: medgemma-4b-it,         hf_id: google/medgemma-4b-it,             display: MedGemma-4B}
+  - {name: medgemma-27b-text-it,   hf_id: google/medgemma-27b-text-it,       display: MedGemma-27B}
 
+runs: [run1, run2, run3, run4, run5]   # unseeded simulation repeats per educator
+
+# ---------------------------------------------------------------------------
+# vLLM servers started by scripts/run/01_simulate.sh and 02_evaluate.sh
+# ---------------------------------------------------------------------------
+servers:
+  patient:
+    served_name: llama3
+    hf_id: meta-llama/Llama-3.3-70B-Instruct
+    port: 5001
+    vllm_args: --tensor-parallel-size 2 --max-model-len 32768 --gpu-memory-utilization 0.95
+  env_agent:          # Simulation Orchestrator
+    served_name: Qwen3.5-9B
+    hf_id: Qwen/Qwen3.5-9B
+    port: 5002
+    vllm_args: "--max-model-len 32768 --default-chat-template-kwargs '{\"enable_thinking\": false}'"
+  educator:           # any educator with an hf_id; served under its name
+    port: 5003
+    vllm_args: --tensor-parallel-size 2 --max-model-len 32768 --gpu-memory-utilization 0.95
+  judge:
+    served_name: gemma-4-31B-it
+    hf_id: google/gemma-4-31B-it
+    revision: 439edf5652646a0d1bd8b46bfdc1d3645761a445
+    port: 5002
+    vllm_args: --tensor-parallel-size 2 --max-model-len 65536 --gpu-memory-utilization 0.95
+  gpus:               # CUDA_VISIBLE_DEVICES per server, per stage
+    simulate: {patient: "0,1", env_agent: "2", educator: "3,4"}
+    evaluate: {judge: "0,1", patient: "2,3"}
+
+# ---------------------------------------------------------------------------
+# Prompt templates (file names under prompts/)
+# ---------------------------------------------------------------------------
+prompts:
+  patient: patient_prompt.jinja
+  patient_conversation_only: patient_prompt_conversation_only.jinja   # SCS: no note-derived clinical content
+  educator: educator_prompt.jinja
+  environment: environment_prompt.jinja
+  topic_checklist: topic_checklist.jinja
+  conversation_quality: conversation_quality.jinja
+  claim_decompose: claim_decompose.jinja
+  claim_safety_judge: claim_safety_judge.jinja
+  comprehension_reference: comprehension_reference.jinja
+  comprehension_question: comprehension_question.jinja
+
+# ---------------------------------------------------------------------------
+# Simulation (src/discharge_bench.py)
+# ---------------------------------------------------------------------------
+discharge_bench:
+  test_file: discharge_bench_curated_v3.jsonl   # relative to data/processed/
+  run_tag: null   # e.g. run1; suffixes only the output dir (output/<educator.backend>__<run_tag>/)
+
+  patient:
+    backend: ${servers.patient.served_name}
+    port: ${servers.patient.port}
+
+  educator:
+    backend: llama3   # set per run, e.g. discharge_bench.educator.backend=Qwen3-32B
+    port: ${servers.educator.port}
+    host: localhost   # set to a remote node hostname for multi-node jobs
+
+  env_agent:          # Simulation Orchestrator
+    eval_model: ${servers.env_agent.served_name}
+    port: ${servers.env_agent.port}   # null = OpenAI API
+    host: localhost
+    max_retries: 2    # patient-turn retries before the session is stopped
+
+  simulation:
+    max_turns: 100
+    n_workers: 20     # cases simulated in parallel
+    min_turns_before_complete: 10   # a session_complete verdict is ignored before this many turns
+    conversation_starter: Please begin the discharge education session.   # first user message to the educator
+
+# ---------------------------------------------------------------------------
+# Evaluation (src/evaluation/)
+# ---------------------------------------------------------------------------
 evaluation:
-  models:
+  models:             # output directories to score; scripts/run/02_evaluate.sh sets <educator>__<run>
     - gpt-5.5
     - gpt-5.4-nano
     - gpt-5.4-mini
@@ -11,33 +103,35 @@ evaluation:
     - Qwen3-4B
     - medgemma-4b-it
     - medgemma-27b-text-it
-  eval_model: gemma-4-31B-it
-  eval_port: null  # null = OpenAI cloud; set to vllm port for local models
-  concurrency: 5
-  vp_port: null   # null = use eval_model for patient; set to VP vllm port for comprehension_score
-  commission_limit: null # safety_commission_raw_score.py: cap cases per model; null = full set
-  eval_temperature: 0  # judge sampling temperature; 0 = reproducible. Measured: at the
-                       # API default, re-extraction churns 60% of cases' item counts.
+  eval_model: ${servers.judge.served_name}
+  eval_port: null     # null = OpenAI API; scripts/run/02_evaluate.sh sets the judge's vLLM port
+  eval_temperature: 0 # judge sampling temperature; 0 = reproducible
+  concurrency: 16     # parallel judge calls
+  judge_timeout: 1800              # seconds per judge request
+  judge_max_output_tokens: 8192    # default cap on a judge response
+  clsa_max_output_tokens: 16384    # CLSA judges all of a case's claims in one call
+  commission_limit: null           # CLSA: cap cases per model (smoke tests); null = all
+  comprehension:
+    vp_port: null                  # null = eval_model answers as the patient; set to the patient's vLLM port
+    strip_clinical: true           # patient persona without note-derived clinical content (reported SCS)
+    reference_max_output_tokens: 800
+    judge_max_output_tokens: 400
+    patient_max_tokens: 512
 
-discharge_bench:
-  test_file: discharge_bench_curated_v3.jsonl   # relative to data/processed/ ; canonical n=320, 16 merged ICD chapters, annotations repaired
-  run_tag: null   # e.g. run1..run5 for the variance study; suffixes ONLY the output dir (output/<educator.backend>__<run_tag>/). educator.backend itself is unchanged.
-
-  patient:
-    backend: llama3
-    port: 5001
-
-  educator:
-    backend: llama3
-    port: 5002
-    host: localhost   # set to remote node hostname for multi-node jobs
-
-  env_agent:
-    eval_model: Qwen3.5-9B
-    max_retries: 2
-    port: null        # null = OpenAI cloud; set to port number for local vllm
-    host: localhost
-
-  simulation:
-    max_turns: 100
-    n_workers: 20
+# ---------------------------------------------------------------------------
+# Analysis (scripts/analysis/, scripts/scoring/)
+# ---------------------------------------------------------------------------
+analysis:
+  display_order:      # educator order in tables and figures (manuscript order)
+    - gpt-5.5
+    - gpt-5.4-mini
+    - gpt-5.4-nano
+    - Qwen3-32B
+    - Qwen3-4B
+    - medgemma-27b-text-it
+    - Llama-3.3-70B-Instruct
+    - medgemma-4b-it
+  case_bootstrap: {B: 10000, seed: 20260914}      # bootstrap_case_ci.py
+  run_sd_bootstrap: {B: 10000, seed: 20260807}    # aggregate_variance_results.py
+  icd_bootstrap: {B: 10000, seed: 20260928}       # icd_chapter_analysis.py
+  audit: {short_max_turns: 15, low_tcs: 0.5}      # complete_case_audit.py

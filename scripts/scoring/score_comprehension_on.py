@@ -18,16 +18,18 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 import numpy as np
 
 PROJECT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(PROJECT / "src"))
+from utils import CONFIG   # noqa: E402
 OUT = PROJECT / "data/processed/output"
-DATASET = PROJECT / "data/processed/discharge_bench_curated_v3.jsonl"
-MODELS = ["gpt-5.5", "gpt-5.4-mini", "gpt-5.4-nano", "Qwen3-32B", "Qwen3-4B",
-          "medgemma-27b-text-it", "Llama-3.3-70B-Instruct", "medgemma-4b-it"]
-RUNS = [f"run{i}" for i in range(1, 6)]
+DATASET = PROJECT / "data/processed" / CONFIG["discharge_bench"]["test_file"]
+MODELS = [e["name"] for e in CONFIG["educators"]]
+RUNS = CONFIG["runs"]
 IN_FILE, OUT_FILE = "comprehension_score_stripped.jsonl", "comprehension_score_orig_na.jsonl"
 
 

@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -37,14 +38,16 @@ import pandas as pd
 import statsmodels.formula.api as smf
 
 PROJECT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(PROJECT / "src"))
+from utils import CONFIG   # noqa: E402
 OUT = PROJECT / "data/processed/output"
 FIG = PROJECT / "figures"
-RUNS = range(1, 6)
-B, SEED = 10000, 20260928
-JUDGE_RAW = "topic_checklist_raw__gemma-4-31B-it.jsonl"
+RUNS = CONFIG["runs"]
+B = CONFIG["analysis"]["icd_bootstrap"]["B"]
+SEED = CONFIG["analysis"]["icd_bootstrap"]["seed"]
+JUDGE_RAW = f"topic_checklist_raw__{CONFIG['evaluation']['eval_model']}.jsonl"
 COMP = "comprehension_score_orig_na.jsonl"   # reported SCS: strict grades, 'not applicable' items dropped
-MODELS = ["gpt-5.5", "gpt-5.4-mini", "gpt-5.4-nano", "Qwen3-32B",
-          "Qwen3-4B", "medgemma-27b-text-it", "Llama-3.3-70B-Instruct", "medgemma-4b-it"]
+MODELS = CONFIG["analysis"]["display_order"]   # row order feeds the per-chapter bootstrap
 C_TCS, C_COMP = "#3B5F91", "#A15340"          # unified manuscript palette
 
 # Mirrors SCORE_BOOK in src/evaluation/topic_checklist_calculate_score.py.
@@ -113,13 +116,13 @@ def calc_tcs(fields: dict, raw: dict) -> float:
 
 
 def load():
-    ds = pd.read_json(PROJECT / "data/processed/discharge_bench_curated_v3.jsonl", lines=True)
+    ds = pd.read_json(PROJECT / "data/processed" / CONFIG["discharge_bench"]["test_file"], lines=True)
     ds["procedure"] = ds.text.map(procedure_status)
     fields = dict(zip(ds.note_id, ds.topic_checklist_fields))
     tcs, comp, q3 = {}, {}, []
     for m in MODELS:
         for r in RUNS:
-            d_run = OUT / f"{m}__run{r}"
+            d_run = OUT / f"{m}__{r}"
             for line in open(d_run / JUDGE_RAW):
                 d = json.loads(line)
                 nid = d["note_id"]

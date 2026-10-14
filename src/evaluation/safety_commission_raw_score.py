@@ -60,12 +60,11 @@ from openai import AsyncOpenAI
 from pydantic import BaseModel
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from utils import PROJECT_PATH
+from utils import CONFIG, PROJECT_PATH, PROMPTS_PATH
 
 sys.path.insert(0, str(Path(__file__).parent))
 import judge
 
-PROMPTS_PATH = PROJECT_PATH / "prompts"
 OUTPUT_ROOT  = PROJECT_PATH / "data/processed/output"
 DATA_ROOT    = PROJECT_PATH / "data/processed"
 
@@ -78,8 +77,8 @@ RAW_STEM    = "safety_commission_raw"
 # pydantic "EOF while parsing a string" and a hard job failure (no silent drop). Cap
 # generously: the worst prompt (~8.4k-token note + ~100 claims ~= 12k) + this budget
 # still fits a 32k context, and 16k >> the ~4k
-# real max output, so verdicts can never truncate.
-MAX_OUTPUT_TOKENS = 16384
+# real max output, so verdicts can never truncate. Set by evaluation.clsa_max_output_tokens.
+MAX_OUTPUT_TOKENS = int(CONFIG["evaluation"]["clsa_max_output_tokens"])
 
 
 class Claim(BaseModel):
@@ -263,8 +262,8 @@ async def async_main(cfg: DictConfig) -> None:
 
     env = jinja2.Environment(loader=jinja2.FileSystemLoader(str(PROMPTS_PATH)))
     templates = {
-        "decompose": env.get_template("claim_decompose.jinja"),
-        "judge":     env.get_template("claim_safety_judge.jinja"),
+        "decompose": env.get_template(cfg.prompts.claim_decompose),
+        "judge":     env.get_template(cfg.prompts.claim_safety_judge),
     }
     eval_port = ev.get("eval_port", None)
     client = judge.make_judge_client(eval_port)

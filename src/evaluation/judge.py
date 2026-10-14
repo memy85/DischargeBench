@@ -13,10 +13,13 @@ import openai
 from openai import AsyncOpenAI
 from pydantic import ValidationError
 
-# A long client timeout so a slow-but-not-hung request is not aborted; a default
-# output cap so a runaway generation cannot hang the server for minutes.
-_JUDGE_TIMEOUT = 1800.0            # seconds
-_DEFAULT_MAX_OUT = 8192            # CLSA passes 16384 explicitly
+from utils import CONFIG
+
+# evaluation.judge_timeout: a long client timeout so a slow-but-not-hung request is not
+# aborted. evaluation.judge_max_output_tokens: a default output cap so a runaway
+# generation cannot hang the server for minutes (CLSA passes its own cap).
+_JUDGE_TIMEOUT = float(CONFIG["evaluation"]["judge_timeout"])
+_DEFAULT_MAX_OUT = int(CONFIG["evaluation"]["judge_max_output_tokens"])
 _TRANSIENT = (openai.APITimeoutError, openai.APIConnectionError,
               openai.InternalServerError, openai.RateLimitError)
 

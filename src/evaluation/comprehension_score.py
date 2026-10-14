@@ -35,7 +35,7 @@ from openai import AsyncOpenAI
 from pydantic import BaseModel
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from utils import PROJECT_PATH
+from utils import PROJECT_PATH, PROMPTS_PATH
 
 sys.path.insert(0, str(Path(__file__).parent))
 import judge
@@ -46,21 +46,31 @@ from virtual_patient import (
     PAST_MEDICAL_HISTORY_RECALL,
 )
 
-PROMPTS_PATH = PROJECT_PATH / "prompts"
 OUTPUT_ROOT  = PROJECT_PATH / "data/processed/output"
 logger = logging.getLogger("comprehension_score")
 
-# STRICT/ablation mode: COMPREHENSION_STRIP_CLINICAL=1 loads a persona that omits all
-# note-derived clinical content (diagnosis, treatments, medications, history), so the
-# patient can only answer comprehension questions from the education conversation.
-# Used to quantify how much comprehension is persona-carried vs educator-driven.
-import os as _os
-_STRIP_CLINICAL = bool(_os.environ.get("COMPREHENSION_STRIP_CLINICAL"))
-_PATIENT_PROMPT_FILE = "patient_prompt_conversation_only.jinja" if _STRIP_CLINICAL else "patient_prompt.jinja"
-PATIENT_PROMPT = (PROMPTS_PATH / _PATIENT_PROMPT_FILE).read_text()
-if _STRIP_CLINICAL:
-    logger.warning("[comprehension] STRIP_CLINICAL mode: patient persona omits note-derived "
-                   "clinical fields (%s)", _PATIENT_PROMPT_FILE)
+# Set from config/config.yaml (evaluation.comprehension, prompts) in configure().
+# strip_clinical: the patient persona omits all note-derived clinical content (diagnosis,
+# treatments, medications, history), so the patient can only answer comprehension
+# questions from the education conversation. This is the reported SCS setting.
+PATIENT_PROMPT = None
+STRIP_CLINICAL = None
+REFERENCE_MAX_OUT = JUDGE_MAX_OUT = PATIENT_MAX_TOKENS = None
+
+
+def configure(cfg: DictConfig) -> None:
+    global PATIENT_PROMPT, STRIP_CLINICAL, REFERENCE_MAX_OUT, JUDGE_MAX_OUT, PATIENT_MAX_TOKENS
+    c = cfg.evaluation.comprehension
+    STRIP_CLINICAL = bool(c.strip_clinical)
+    prompt_file = cfg.prompts.patient_conversation_only if STRIP_CLINICAL else cfg.prompts.patient
+    PATIENT_PROMPT = (PROMPTS_PATH / prompt_file).read_text()
+    REFERENCE_MAX_OUT = int(c.reference_max_output_tokens)
+    JUDGE_MAX_OUT = int(c.judge_max_output_tokens)
+    PATIENT_MAX_TOKENS = int(c.patient_max_tokens)
+    if STRIP_CLINICAL:
+        logger.warning("[comprehension] strip_clinical: patient persona omits note-derived "
+                       "clinical fields (%s)", prompt_file)
+
 
 COMPREHENSION_QUESTIONS = [
     "What was your discharge diagnosis?",
@@ -184,7 +194,7 @@ async def extract_reference_answer(
     async with semaphore:
         answer = await judge.structured_call(
             client, eval_model, prompt, ReferenceAnswer,
-            temperature=temperature, max_output_tokens=800,
+            temperature=temperature, max_output_tokens=REFERENCE_MAX_OUT,
         )
     if answer is None:
         logger.warning("[comprehension] reference extraction failed (schema-invalid); empty reference")
@@ -204,7 +214,7 @@ async def ask_patient(
                 output = await vp_client.chat.completions.create(
                     model=vp_model,
                     messages=messages,
-                    max_tokens=512,
+                    max_tokens=PATIENT_MAX_TOKENS,
                 )
                 return (output.choices[0].message.content or "").strip()
             except Exception as e:  # noqa: BLE001
@@ -237,7 +247,7 @@ async def judge_answer(
     async with semaphore:
         result = await judge.structured_call(
             client, eval_model, prompt, JudgeResult,
-            temperature=temperature, max_output_tokens=400,
+            temperature=temperature, max_output_tokens=JUDGE_MAX_OUT,
         )
     if result is None:
         logger.warning("[comprehension] judge failed (schema-invalid); marking incorrect")
@@ -382,8 +392,8 @@ async def evaluate_model(
     results = await asyncio.gather(*tasks)
 
     df          = pd.DataFrame(results)
-    # STRIP_CLINICAL mode writes to a separate file so the real results are untouched.
-    _score_name = "comprehension_score_stripped.jsonl" if _STRIP_CLINICAL else "comprehension_score.jsonl"
+    # strip_clinical writes to its own file, so the two settings never overwrite each other.
+    _score_name = "comprehension_score_stripped.jsonl" if STRIP_CLINICAL else "comprehension_score.jsonl"
     output_path = OUTPUT_ROOT / model / _score_name
     df.to_json(output_path, lines=True, orient="records")
     print(f"[{model}] Saved {len(results)} evaluations to {output_path}  "
@@ -397,6 +407,7 @@ async def evaluate_model(
 # ---------------------------------------------------------------------------
 
 async def async_main(cfg: DictConfig) -> None:
+    configure(cfg)
     ev        = cfg.evaluation
     models    = list(ev.models)
     test_file = str(PROJECT_PATH / "data/processed" / cfg.discharge_bench.test_file)
@@ -406,7 +417,7 @@ async def async_main(cfg: DictConfig) -> None:
     client = judge.make_judge_client(eval_port)
     temperature = ev.get("eval_temperature", 0)
 
-    vp_port = ev.get("vp_port", None)
+    vp_port = ev.comprehension.vp_port
     if vp_port is not None:
         vp_client = AsyncOpenAI(base_url=f"http://localhost:{vp_port}/v1", api_key="EMPTY")
         vp_model  = cfg.discharge_bench.patient.backend
@@ -416,8 +427,8 @@ async def async_main(cfg: DictConfig) -> None:
 
     loader      = jinja2.FileSystemLoader(str(PROMPTS_PATH))
     env         = jinja2.Environment(loader=loader)
-    ref_template = env.get_template("comprehension_reference.jinja")
-    q_template   = env.get_template("comprehension_question.jinja")
+    ref_template = env.get_template(cfg.prompts.comprehension_reference)
+    q_template   = env.get_template(cfg.prompts.comprehension_question)
 
     for model in models:
         await evaluate_model(

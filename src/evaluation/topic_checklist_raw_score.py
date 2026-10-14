@@ -32,12 +32,11 @@ from openai import AsyncOpenAI
 from pydantic import BaseModel
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from utils import PROJECT_PATH
+from utils import PROJECT_PATH, PROMPTS_PATH
 
 sys.path.insert(0, str(Path(__file__).parent))
 import judge
 
-PROMPTS_PATH = PROJECT_PATH / "prompts"
 OUTPUT_ROOT  = PROJECT_PATH / "data/processed/output"
 DATA_PATH    = PROJECT_PATH / "data/processed"
 
@@ -211,7 +210,7 @@ async def async_main(cfg: DictConfig) -> None:
 
     loader   = jinja2.FileSystemLoader(str(PROMPTS_PATH))
     env      = jinja2.Environment(loader=loader)
-    template = env.get_template("topic_checklist.jinja")
+    template = env.get_template(cfg.prompts.topic_checklist)
     eval_port = ev.get("eval_port", None)
     client = judge.make_judge_client(eval_port)
     temperature = ev.get("eval_temperature", 0)

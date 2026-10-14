@@ -37,12 +37,11 @@ import numpy as np
 import textstat
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from utils import PROJECT_PATH
+from utils import PROJECT_PATH, PROMPTS_PATH
 
 sys.path.insert(0, str(Path(__file__).parent))
 import judge
 
-PROMPTS_PATH  = PROJECT_PATH / "prompts"
 OUTPUT_ROOT   = PROJECT_PATH / "data/processed/output"
 
 
@@ -177,7 +176,7 @@ async def async_main(cfg: DictConfig) -> None:
 
     loader   = jinja2.FileSystemLoader(str(PROMPTS_PATH))
     env      = jinja2.Environment(loader=loader)
-    template = env.get_template("conversation_quality.jinja")
+    template = env.get_template(cfg.prompts.conversation_quality)
     eval_port = ev.get("eval_port", None)
     client = judge.make_judge_client(eval_port)
     temperature = ev.get("eval_temperature", 0)

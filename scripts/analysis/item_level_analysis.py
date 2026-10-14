@@ -25,20 +25,20 @@ import numpy as np
 import pandas as pd
 
 PROJECT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(PROJECT / "src"))
 sys.path.insert(0, str(PROJECT / "src/evaluation"))
 sys.path.insert(0, str(PROJECT / "scripts/analysis"))
 from topic_checklist_calculate_score import SCORE_BOOK          # noqa: E402
 from icd_chapter_analysis import ICD_SHORT, procedure_status   # noqa: E402
+from utils import CONFIG                                        # noqa: E402
 
 DATA = PROJECT / "data/processed"
 OUT = DATA / "output"
 TAB = PROJECT / "outputs/item_analysis"
 FIG = PROJECT / "figures"
-RUNS = [f"run{i}" for i in range(1, 6)]
-MODELS = {  # output dir -> display name (manuscript order)
-    "gpt-5.5": "GPT-5.5", "gpt-5.4-mini": "GPT-5.4-mini", "gpt-5.4-nano": "GPT-5.4-nano",
-    "Qwen3-32B": "Qwen3-32B", "Qwen3-4B": "Qwen3-4B", "medgemma-27b-text-it": "MedGemma-27B",
-    "Llama-3.3-70B-Instruct": "Llama-3.3-70B", "medgemma-4b-it": "MedGemma-4B"}
+RUNS = CONFIG["runs"]
+_DISPLAY = {e["name"]: e["display"] for e in CONFIG["educators"]}
+MODELS = {m: _DISPLAY[m] for m in CONFIG["analysis"]["display_order"]}   # output dir -> display name
 PERS = {"distrustful": "Distrustful", "anxious": "Anxious", "minimiser": "Minimizer",
         "high_conscientiousness": "Conscientious", "neutral": "Neutral"}
 TOPIC = {"discharge_diagnosis": "Diagnosis", "new_medication": "New medication",
@@ -72,7 +72,7 @@ def read_jsonl(p: Path):
 
 
 def load():
-    ds = pd.read_json(DATA / "discharge_bench_curated_v3.jsonl", lines=True)
+    ds = pd.read_json(DATA / CONFIG["discharge_bench"]["test_file"], lines=True)
     ds["personality"] = ds.profile.map(lambda p: PERS[p["personality"]])
     ds["chapter"] = ds.icd_chapter.map(ICD_SHORT)
     ds["procedure"] = ds.text.map(procedure_status)
@@ -82,7 +82,7 @@ def load():
     for mdir, disp in MODELS.items():
         for r in RUNS:
             d = OUT / f"{mdir}__{r}"
-            for rec in read_jsonl(d / "topic_checklist_raw__gemma-4-31B-it.jsonl"):
+            for rec in read_jsonl(d / f"topic_checklist_raw__{CONFIG['evaluation']['eval_model']}.jsonl"):
                 nid = rec["note_id"]
                 if nid not in tcf:
                     continue

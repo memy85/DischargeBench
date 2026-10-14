@@ -25,7 +25,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from case_session import CaseSession
 from educator_agent import EducatorAgent
-from utils import PROJECT_PATH
+from utils import CONFIG, PROJECT_PATH, PROMPTS_PATH
 
 # ---------------------------------------------------------------------------
 # Paths & defaults
@@ -33,10 +33,7 @@ from utils import PROJECT_PATH
 
 DATA_PATH = PROJECT_PATH / "data/processed"
 
-EDUCATOR_PROMPT_PATH = Path(__file__).parent.parent / "prompts/educator_prompt.jinja"
-
-# Injected as the first "user" message to trigger the educator's opening turn.
-CONVERSATION_STARTER = "Please begin the discharge education session."
+EDUCATOR_PROMPT_PATH = PROMPTS_PATH / CONFIG["prompts"]["educator"]
 
 
 # ---------------------------------------------------------------------------
@@ -55,6 +52,8 @@ def simulate_case(
     env_agent_host:   str,
     max_retries:      int,
     max_turns:        int,
+    min_turns_before_complete: int,
+    conversation_starter: str,
 ) -> dict:
     note_id = scenario["note_id"]
 
@@ -68,6 +67,7 @@ def simulate_case(
             env_agent_host=env_agent_host,
             max_retries=max_retries,
             max_turns=max_turns,
+            min_turns_before_complete=min_turns_before_complete,
         )
 
         educator = EducatorAgent(
@@ -78,7 +78,8 @@ def simulate_case(
             client_params={"host": educator_host},
         )
 
-        educator_message = educator.generate_response(CONVERSATION_STARTER)
+        # the first user message, which triggers the educator's opening turn
+        educator_message = educator.generate_response(conversation_starter)
         while not session.is_done:
             patient_reply = session.submit_educator_turn(
                 educator_message,
@@ -122,6 +123,8 @@ def run_benchmark(
     max_retries:      int       = 2,
     max_turns:        int       = 100,
     n_workers:        int       = 20,
+    min_turns_before_complete: int = 10,
+    conversation_starter: str = "Please begin the discharge education session.",
 ) -> None:
     testset = pd.read_json(test_file, lines=True, orient="records")
     total   = len(testset)
@@ -166,6 +169,8 @@ def run_benchmark(
         env_agent_host=env_agent_host,
         max_retries=max_retries,
         max_turns=max_turns,
+        min_turns_before_complete=min_turns_before_complete,
+        conversation_starter=conversation_starter,
     )
 
     pending = [row for _, row in testset.iterrows() if row["note_id"] not in done_ids]
@@ -231,6 +236,8 @@ def main(cfg: DictConfig) -> None:
         max_retries=db.env_agent.max_retries,
         max_turns=sim.max_turns,
         n_workers=sim.n_workers,
+        min_turns_before_complete=sim.min_turns_before_complete,
+        conversation_starter=sim.conversation_starter,
     )
 
 

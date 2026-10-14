@@ -28,20 +28,22 @@ Usage:  python scripts/analysis/bootstrap_case_ci.py
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
 PROJECT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(PROJECT / "src"))
+from utils import CONFIG   # noqa: E402
 OUTPUT_ROOT = PROJECT / "data/processed/output"
-V3 = PROJECT / "data/processed/discharge_bench_curated_v3.jsonl"
+V3 = PROJECT / "data/processed" / CONFIG["discharge_bench"]["test_file"]
 
-B = 10000
-SEED = 20260914
-RUN_TAGS = ["run1", "run2", "run3", "run4", "run5"]
-MODELS = ["gpt-5.5", "gpt-5.4-nano", "gpt-5.4-mini", "Llama-3.3-70B-Instruct",
-          "Qwen3-32B", "Qwen3-4B", "medgemma-4b-it", "medgemma-27b-text-it"]
+B = CONFIG["analysis"]["case_bootstrap"]["B"]
+SEED = CONFIG["analysis"]["case_bootstrap"]["seed"]
+RUN_TAGS = CONFIG["runs"]
+MODELS = [e["name"] for e in CONFIG["educators"]]   # config order (one RNG runs through them)
 
 # metric -> (score file, per-case field OR list of fields to sum)
 # unsafe_claims = the headline CLSA safety metric = the two educator-attributable

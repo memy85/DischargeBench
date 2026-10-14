@@ -22,9 +22,10 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).parent))
 
 from environment_agent import AgentRole, EnvironmentAgent
+from utils import CONFIG, PROMPTS_PATH
 from virtual_patient import VirtualPatient
 
-DEFAULT_PATIENT_PROMPT_PATH = Path(__file__).parent.parent / "prompts/patient_prompt.jinja"
+DEFAULT_PATIENT_PROMPT_PATH = PROMPTS_PATH / CONFIG["prompts"]["patient"]
 
 
 def _undo_patient_turn(patient: VirtualPatient) -> None:
@@ -54,6 +55,7 @@ class CaseSession:
         env_agent_host:      str,
         max_retries:         int,
         max_turns:           int,
+        min_turns_before_complete: int = 10,
         patient_prompt_path: str | Path = DEFAULT_PATIENT_PROMPT_PATH,
     ) -> None:
         self.note_id   = scenario["note_id"]
@@ -75,6 +77,7 @@ class CaseSession:
             max_retries=max_retries,
             port=env_agent_port,
             host=env_agent_host,
+            min_turns_before_complete=min_turns_before_complete,
         )
 
         self.conversation: list[dict]          = []
