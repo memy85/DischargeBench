@@ -79,9 +79,18 @@ The Python entry points use [Hydra](https://hydra.cc), so `discharge_bench.*` an
 
 The benchmark has **320 MIMIC-IV discharge summaries**, 16 ICD chapters × 20 cases, balanced within each chapter on personality (5 × 4) and health literacy (10 low / 10 high). ICD-9 / ICD-10 is 10 / 10 within each of the 8 chapters whose ICD-9 and ICD-10 titles were merged.
 
-Each case record holds the discharge note, its ICD code and chapter, the patient profile extracted from the note with the assigned persona, and the note-grounded checklist fields that gate each TCS question. The case file, `discharge_bench_curated_v3.jsonl`, goes in `data/processed/`.
+Each case record holds the discharge note, its ICD code and chapter, the patient profile extracted from the note with the assigned persona, and the note-grounded checklist fields that gate each TCS question.
 
-The case records derive from MIMIC-IV (v3.1) and MIMIC-IV-Note (v2.2) and cannot be redistributed here. They will be released on PhysioNet as **MIMIC-IV-Ext-DischargeBench**, together with each case's Virtual Patient traits and medical profile and the complete simulation records; the link will be added here when the release is available. Access requires credentialed PhysioNet access, a signed PhysioNet Credentialed Health Data Use Agreement (v1.5.0), and the CITI "Data or Specimens Only Research" training.
+The case records derive from MIMIC-IV (v3.1) and MIMIC-IV-Note (v2.2) and cannot be redistributed here. They will be released on PhysioNet as **MIMIC-IV-Ext-DischargeBench**, together with the complete simulation records of the eight educators in the paper; the link will be added here when the release is available. Access requires credentialed PhysioNet access, a signed PhysioNet Credentialed Health Data Use Agreement (v1.5.0), and the CITI "Data or Specimens Only Research" training.
+
+The release's `data/` folder has the same layout as this repository. Copy it into the repository root, merging with `data/`:
+
+```
+data/processed/discharge_bench_curated_v3.jsonl                     the 320 cases
+data/processed/output/<educator>__run<r>/simulation_results.jsonl   our simulation records
+```
+
+`02_evaluate.sh` can then score the released simulation records without re-simulating. The simulator skips cases already in an output file, so to simulate one of the eight educators again, use a new run tag (e.g. `runs: [run6]` in `config/config.yaml`).
 
 ## Running the benchmark
 
