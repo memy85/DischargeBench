@@ -12,14 +12,17 @@ system prompt before regeneration.
 
 from __future__ import annotations
 
+import json
 import logging
+import time
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
+import openai
 from openai import OpenAI
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from jinja2 import Environment, FileSystemLoader
 
 from utils import CONFIG, PROMPTS_PATH
@@ -44,6 +47,17 @@ _macros = _jinja_env.get_template(_TEMPLATE_FILE).module
 
 def _render_macro(macro_name: str, **variables: Any) -> str:
     return getattr(_macros, macro_name)(**variables)
+
+
+# Same retry policy as the evaluation judge (src/evaluation/judge.py): up to 3 attempts for
+# schema-invalid output, up to 5 with backoff for transient API errors. Anything else
+# (e.g. a context-length 400) is not retried.
+_TRANSIENT = (openai.APITimeoutError, openai.APIConnectionError,
+              openai.InternalServerError, openai.RateLimitError)
+
+
+class EnvAgentError(RuntimeError):
+    """The Simulation Orchestrator could not judge a turn, so the session cannot continue."""
 
 
 # ---------------------------------------------------------------------------
@@ -156,7 +170,7 @@ class DiscardedTurn:
 class EvalResponse(BaseModel):
     verdict:                Verdict
     issue:                  IssueType
-    severity:               str | None = None
+    severity:               Literal["minor", "moderate", "severe"] | None = None
     action:                 ActionType
     correction_instruction: str | None = None
     prompt_faithfulness:    PromptFaithfulness = PromptFaithfulness.NA
@@ -432,13 +446,31 @@ class EnvironmentAgent:
             {"role": "system", "content": self._SYSTEM_PROMPT},
             {"role": "user",   "content": user_prompt},
         ]
-        try:
-            response = self._client.responses.parse(
-                model=self.eval_model,
-                input=inputs,
-                text_format=EvalResponse,
-            )
-            data = response.output_parsed
+        last_exc: Exception | None = None
+        for attempt in range(5):
+            try:
+                response = self._client.responses.parse(
+                    model=self.eval_model,
+                    input=inputs,
+                    text_format=EvalResponse,
+                )
+                data = response.output_parsed
+                if data is None:
+                    raise ValueError("no structured output")
+            except (ValidationError, json.JSONDecodeError, AttributeError, ValueError) as e:
+                last_exc = e
+                if attempt >= 2:
+                    break
+                continue
+            except _TRANSIENT as e:
+                last_exc = e
+                if attempt >= 4:
+                    break
+                time.sleep(min(2 ** attempt, 30))
+                continue
+            except openai.APIError as e:   # not retryable, e.g. prompt over the context limit
+                last_exc = e
+                break
             return EvaluationResult(
                 verdict=data.verdict,
                 issue=data.issue,
@@ -451,16 +483,10 @@ class EnvironmentAgent:
                 session_complete=data.session_complete,
                 raw=data.model_dump(),
             )
-        except Exception:
-            logger.error("[env] Structured parse failed for turn (%s)", role.value)
-            return EvaluationResult(
-                verdict=Verdict.WARN,
-                issue=IssueType.INCOHERENCE,
-                severity="minor",
-                action=ActionType.SOFT_CORRECTION,
-                correction_instruction="Please continue the conversation naturally.",
-                reasoning="Environment agent received unparseable evaluation output.",
-            )
+        msg = (f"env_agent_error: {role.value} turn {len(self._history)}: "
+               f"{type(last_exc).__name__}: {last_exc}")
+        logger.error("[env] %s", msg)
+        raise EnvAgentError(msg) from last_exc
 
     def _resolve_action(
         self,

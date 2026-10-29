@@ -5,8 +5,8 @@ Claim-Level Safety Audit (CLSA) of what the educator SAID (errors of commission)
 opposed to what it failed to say (omission — that is TCS).
 
 Metric name: **CLSA**. This module, its sibling calculate stage, the config key
-(`commission_limit`), and all on-disk outputs (`safety_commission_*.jsonl`,
-`commission_summary.csv`) keep the `commission` stem for provenance; "commission" below
+(`commission_limit`), and all on-disk outputs (`safety_commission_*.jsonl`) keep the
+`commission` stem for provenance; "commission" below
 also means the patient-safety failure class (commission vs. omission), not a second name.
 
 Targets unsafe medical advice and wrong medication instructions, which nothing else in the benchmark

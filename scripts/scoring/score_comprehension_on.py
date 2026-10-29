@@ -38,6 +38,10 @@ def is_na(ref: str) -> bool:
 
 
 def score_record(rec: dict) -> float:
+    failed = [qr["post"]["error"] for qr in rec["question_results"] if "error" in qr["post"]]
+    if failed:
+        raise ValueError(f"{rec['note_id']}: {len(failed)} questions failed ({', '.join(failed)}); "
+                         f"re-run the comprehension evaluation for this case")
     kept = [qr["post"]["score"] for qr in rec["question_results"] if not is_na(qr["reference_answer"])]
     if not kept:
         raise ValueError(f"{rec['note_id']}: no scorable question (all references not applicable)")

@@ -5,6 +5,8 @@ Evaluates patient comprehension after the simulated conversation.
 Six questions are asked one at a time to both the discharge note (reference)
 and the patient agent (conditioned on system prompt + conversation history).
 Each answer is judged as correct (1.0), partially correct (0.5), or incorrect (0.0).
+If the patient answer or the judge call fails, the question is recorded with an "error"
+and no score, and the case's post_education_score is null.
 
 Reference answers are pre-computed once across all models since they only depend
 on the discharge note.
@@ -207,7 +209,8 @@ async def ask_patient(
     vp_client: AsyncOpenAI,
     vp_model: str,
     semaphore: asyncio.Semaphore,
-) -> str:
+) -> str | None:
+    """The patient's answer, or None if all 3 attempts failed or returned nothing."""
     async with semaphore:
         for attempt in range(3):
             try:
@@ -216,11 +219,14 @@ async def ask_patient(
                     messages=messages,
                     max_tokens=PATIENT_MAX_TOKENS,
                 )
-                return (output.choices[0].message.content or "").strip()
+                answer = (output.choices[0].message.content or "").strip()
+                if answer:
+                    return answer
+                logger.warning("[comprehension] patient answer empty (attempt %d)", attempt + 1)
             except Exception as e:  # noqa: BLE001
-                if attempt == 2:
-                    logger.warning("[comprehension] patient answer failed (%s); empty", type(e).__name__)
-                    return ""
+                logger.warning("[comprehension] patient answer failed (attempt %d): %s: %s",
+                               attempt + 1, type(e).__name__, e)
+    return None
 
 
 async def judge_answer(
@@ -232,7 +238,7 @@ async def judge_answer(
     semaphore: asyncio.Semaphore,
     *,
     temperature: float = 0,
-) -> JudgeResult:
+) -> JudgeResult | None:
     prompt = (
         f"You are evaluating a patient's comprehension of their discharge information.\n\n"
         f"Question: {question}\n"
@@ -250,8 +256,7 @@ async def judge_answer(
             temperature=temperature, max_output_tokens=JUDGE_MAX_OUT,
         )
     if result is None:
-        logger.warning("[comprehension] judge failed (schema-invalid); marking incorrect")
-        return JudgeResult(correctness=CorrectnessLevel.INCORRECT, reason="eval_error")
+        logger.warning("[comprehension] judge failed; question recorded as an error")
     return result
 
 
@@ -274,7 +279,7 @@ async def evaluate_question(
     *,
     temperature: float = 0,
 ) -> dict:
-    """Evaluates a single question pre- and post-education."""
+    """Evaluates a single question after the conversation."""
     question_prompt = q_template.render(question=question)
 
     # Reference answer from discharge note
@@ -283,33 +288,26 @@ async def evaluate_question(
         temperature=temperature,
     )
 
-    # Pre-education: patient conditioned on system prompt only (no conversation)
-    pre_messages   = build_patient_messages(patient_system_prompt, [], question_prompt)
-    pre_answer     = await ask_patient(pre_messages, vp_client, vp_model, semaphore)
-    pre_judgment   = await judge_answer(question, reference_answer, pre_answer, client, eval_model,
-                                        semaphore, temperature=temperature)
-
     # Post-education: patient conditioned on system prompt + full conversation
     post_messages  = build_patient_messages(patient_system_prompt, conversation, question_prompt)
     post_answer    = await ask_patient(post_messages, vp_client, vp_model, semaphore)
-    post_judgment  = await judge_answer(question, reference_answer, post_answer, client, eval_model,
-                                        semaphore, temperature=temperature)
+    post_judgment  = None
+    if post_answer is not None:
+        post_judgment = await judge_answer(question, reference_answer, post_answer, client, eval_model,
+                                           semaphore, temperature=temperature)
 
+    post = {"patient_answer": post_answer, "correctness": None, "reason": None, "score": None}
+    if post_answer is None:
+        post["error"] = "patient_answer_failed"
+    elif post_judgment is None:
+        post["error"] = "judge_failed"
+    else:
+        post.update(correctness=post_judgment.correctness, reason=post_judgment.reason,
+                    score=SCORE_MAP[post_judgment.correctness])
     return {
         "question":         question,
         "reference_answer": reference_answer,
-        "pre": {
-            "patient_answer": pre_answer,
-            "correctness":    pre_judgment.correctness,
-            "reason":         pre_judgment.reason,
-            "score":          SCORE_MAP[pre_judgment.correctness],
-        },
-        "post": {
-            "patient_answer": post_answer,
-            "correctness":    post_judgment.correctness,
-            "reason":         post_judgment.reason,
-            "score":          SCORE_MAP[post_judgment.correctness],
-        },
+        "post":             post,
     }
 
 
@@ -339,8 +337,9 @@ async def evaluate_case(
         )
         question_results.append(result)
 
-    pre_score  = sum(r["pre"]["score"]  for r in question_results) / len(question_results)
-    post_score = sum(r["post"]["score"] for r in question_results) / len(question_results)
+    n_errors   = sum("error" in r["post"] for r in question_results)
+    post_score = (None if n_errors else
+                  sum(r["post"]["score"] for r in question_results) / len(question_results))
 
     return {
         "note_id":             record["note_id"],
@@ -348,9 +347,8 @@ async def evaluate_case(
         "early_termination":   record["early_termination"],
         "session_complete":    record["session_complete"],
         "question_results":    question_results,
-        "pre_education_score": pre_score,
         "post_education_score": post_score,
-        "score_shift":         post_score - pre_score,
+        "n_question_errors":   n_errors,
     }
 
 
@@ -396,10 +394,12 @@ async def evaluate_model(
     _score_name = "comprehension_score_stripped.jsonl" if STRIP_CLINICAL else "comprehension_score.jsonl"
     output_path = OUTPUT_ROOT / model / _score_name
     df.to_json(output_path, lines=True, orient="records")
+    n_err = int((df["n_question_errors"] > 0).sum())
     print(f"[{model}] Saved {len(results)} evaluations to {output_path}  "
-          f"(pre: {df['pre_education_score'].mean():.3f}  "
-          f"post: {df['post_education_score'].mean():.3f}  "
-          f"shift: {df['score_shift'].mean():+.3f})")
+          f"(post: {df['post_education_score'].mean():.3f} over cases without errors)")
+    if n_err:
+        print(f"[{model}] WARNING: {n_err} cases have failed questions (post_education_score is null); "
+              f"re-run them before scoring")
 
 
 # ---------------------------------------------------------------------------

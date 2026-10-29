@@ -189,7 +189,7 @@ def get_answer(response):
     if "<answer>" in answer and "</answer>" in answer:
         return answer.split("<answer>", 1)[-1].split("</answer>", 1)[0].strip()
     if "</think>" in answer:
-        answer = answer.split("</think>")[-1].replace("<think>", "").replace("\n", "").strip()
+        answer = answer.split("</think>")[-1].strip()
     return answer
 
 class VirtualPatient : 

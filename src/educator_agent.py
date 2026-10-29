@@ -37,6 +37,10 @@ class EducatorAgent:
         self.messages.append({"role": "user", "content": patient_response})
         response = self.client(message=self.messages, model=self.backend_str, port=self.backend_port, **self.client_params)
         answer = get_answer(response)
+        if getattr(response, "status", None) == "incomplete":
+            raise RuntimeError(f"educator reply incomplete: {getattr(response, 'incomplete_details', None)}")
+        if not answer.strip():
+            raise RuntimeError("educator returned an empty reply")
         self.messages.append({"role": "assistant", "content": answer})
         return answer
 

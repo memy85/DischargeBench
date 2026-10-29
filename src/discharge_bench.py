@@ -12,6 +12,7 @@ Output: JSONL file, one record per case, readable with:
 from __future__ import annotations
 
 import json
+import os
 import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -134,19 +135,32 @@ def run_benchmark(
     output_path = Path(output_file)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
+    # Resume: completed cases are skipped. Errored records are removed from the file so the
+    # re-run replaces them instead of appearing beside them.
     done_ids: set[str] = set()
     if output_path.exists():
+        kept, n_error = [], 0
         with open(output_path) as f:
-            for line in f:
-                line = line.strip()
-                if not line:
+            for i, line in enumerate(f, 1):
+                if not line.strip():
                     continue
                 try:
                     rec = json.loads(line)
-                except json.JSONDecodeError:
+                except json.JSONDecodeError as e:
+                    raise ValueError(f"{output_path}:{i}: malformed record; fix or remove it before resuming") from e
+                if rec.get("error") is not None:
+                    n_error += 1
                     continue
-                if rec.get("error") is None and rec.get("note_id") is not None:
-                    done_ids.add(rec["note_id"])
+                if rec["note_id"] in done_ids:
+                    raise ValueError(f"{output_path}:{i}: duplicate completed record for {rec['note_id']}")
+                done_ids.add(rec["note_id"])
+                kept.append(line if line.endswith("\n") else line + "\n")
+        if n_error:
+            tmp = output_path.with_suffix(".jsonl.tmp")
+            with open(tmp, "w") as f:
+                f.writelines(kept)
+            os.replace(tmp, output_path)
+            print(f"Resuming: removed {n_error} errored records; those cases will be re-run.")
         if done_ids:
             print(f"Resuming: {len(done_ids)} cases already recorded, will be skipped.")
 

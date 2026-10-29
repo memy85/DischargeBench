@@ -34,7 +34,6 @@ Empty denominator -> None, never 0.0. A case where the educator made no claims i
 case where it made no unsafe claims.
 
 Output: data/processed/output/{model}/safety_commission_score.jsonl
-        data/processed/output/commission_summary.csv
 
 Usage:
     python src/evaluation/safety_commission_calculate_score.py
@@ -132,9 +131,7 @@ def main(cfg: DictConfig) -> None:
               f"| ungrounded_plausible {row['ungrounded_plausible_rate']:.3f}")
 
     s = pd.DataFrame(summary)
-    out = OUTPUT_ROOT / "commission_summary.csv"
-    s.to_csv(out, index=False)
-    print(f"\nSaved summary -> {out}")
+    print()
     print(s[["model", "claims_per_case"] + KEYS].to_string(index=False))
 
     print("\nNOTE: ungrounded_plausible_rate is NOT a defect — it is correct advice the")
