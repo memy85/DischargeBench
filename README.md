@@ -10,7 +10,23 @@ DischargeBench is intended as a screening step before human evaluation, not as e
 
 This repository contains the simulation harness, every prompt, the evaluation code and the analysis scripts. The benchmark cases are derived from MIMIC-IV-Note and are distributed separately through PhysioNet (see [Data](#data)).
 
-## How it works
+## Changes in v1.0.1
+
+The paper's results and the simulation records released on PhysioNet were produced with v1.0.0. v1.0.1 changes how failures are handled in new runs; it does not change how any metric is defined.
+
+**Simulation**
+- The Simulation Orchestrator no longer substitutes a default verdict when its judge call fails. In v1.0.0 a failed call let the turn through unjudged and could never end the session; once a session outgrew the Orchestrator's context, every later call failed this way. The call is now retried (3 attempts for invalid output, 5 with backoff for connection or server errors); if it still fails, the case is recorded with an `error` starting `env_agent_error:`.
+- The Orchestrator's `severity` is restricted to `minor`, `moderate` or `severe`. In v1.0.0 it was free text, and any value other than exactly `minor` or `moderate` was treated as severe.
+- An empty or truncated educator reply ends the case with an `error` instead of being passed to the patient.
+- Line breaks in educator replies are kept. In v1.0.0 they were removed from every reply containing a `</think>` tag (the Qwen3 educators).
+- On resume, errored records are removed from the output file before their cases are re-run, so each case appears once. A malformed line in the output file stops the resume instead of being skipped.
+
+**Evaluation**
+- SCS no longer asks the comprehension questions before the conversation; only the post-conversation score (`post_education_score`) is computed. The reported SCS never used the pre-conversation score.
+- A comprehension question whose patient answer or judge call still fails after retries is recorded with an `error` and no score, instead of being graded incorrect. The case's `post_education_score` is then null, and `score_comprehension_on.py` stops until the case is re-run.
+- `safety_commission_calculate_score.py` no longer writes `data/processed/output/commission_summary.csv`, which each run overwrote; per-case CLSA scores are unchanged.
+
+## DischargeBench Overview
 
 <p align="center"><img src="assets/fig_overview.png" alt="DischargeBench overview: Stage I simulates the dialogue between the Educator and the Virtual Patient under the Simulation Orchestrator; Stage II scores it with an LLM judge on Conversation Quality, TCS, SCS and CLSA." width="440"></p>
 
@@ -129,22 +145,6 @@ To evaluate a new educator, add it under `educators` in `config/config.yaml` (`h
 - Bootstrap CIs are seeded.
 - `python scripts/scoring/score_comprehension_on.py --check` verifies existing SCS outputs without rewriting them.
 - Figures are set in Fira Sans (SIL Open Font License, from Google Fonts). The plotting code loads any `.ttf` files placed in `fonts/`; without them matplotlib uses its default font.
-
-## Changes in v1.0.1
-
-The paper's results and the simulation records released on PhysioNet were produced with v1.0.0. v1.0.1 changes how failures are handled in new runs; it does not change how any metric is defined.
-
-**Simulation**
-- The Simulation Orchestrator no longer substitutes a default verdict when its judge call fails. In v1.0.0 a failed call let the turn through unjudged and could never end the session; once a session outgrew the Orchestrator's context, every later call failed this way. The call is now retried (3 attempts for invalid output, 5 with backoff for connection or server errors); if it still fails, the case is recorded with an `error` starting `env_agent_error:`.
-- The Orchestrator's `severity` is restricted to `minor`, `moderate` or `severe`. In v1.0.0 it was free text, and any value other than exactly `minor` or `moderate` was treated as severe.
-- An empty or truncated educator reply ends the case with an `error` instead of being passed to the patient.
-- Line breaks in educator replies are kept. In v1.0.0 they were removed from every reply containing a `</think>` tag (the Qwen3 educators).
-- On resume, errored records are removed from the output file before their cases are re-run, so each case appears once. A malformed line in the output file stops the resume instead of being skipped.
-
-**Evaluation**
-- SCS no longer asks the comprehension questions before the conversation; only the post-conversation score (`post_education_score`) is computed. The reported SCS never used the pre-conversation score.
-- A comprehension question whose patient answer or judge call still fails after retries is recorded with an `error` and no score, instead of being graded incorrect. The case's `post_education_score` is then null, and `score_comprehension_on.py` stops until the case is re-run.
-- `safety_commission_calculate_score.py` no longer writes `data/processed/output/commission_summary.csv`, which each run overwrote; per-case CLSA scores are unchanged.
 
 ## Citation
 
